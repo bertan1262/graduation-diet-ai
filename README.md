@@ -19,11 +19,11 @@ diet-ai-project/
 
 ---
 
-## 👥 Ekip Rol Dağılımı
+## 👥 Ekip ve Rol Dağılımı
 
-* **Geliştirici 1 (Mobil & UI/UX):** `/mobile` dizini sahibi. Kamera önizlemesi, Expo Go ile iOS/Android canlı testleri, Diyetisyen sohbet ekranı.
-* **Geliştirici 2 (Backend & Veritabanı):** `/backend` dizini sahibi. REST API, PostgreSQL tabloları, BMR/TDEE hesaplamaları, API Gateway.
-* **Geliştirici 3 (Yapay Zekâ & CV/LLM):** `/ai-service` dizini sahibi. Görüntüden yemek tanıma, porsiyon tahmini, Gemini API tıbbi tanı engelleyici filtreler (guardrails).
+* **Bertan Beyal — Mobil & Ön Yüz (Frontend) Mühendisi:** `/mobile` dizini sorumlusu. React Native (Expo) ile hem Android hem iOS uyumlu arayüz, akıllı kamera vizörü, Expo Go testleri ve kullanıcı deneyimi.
+* **Eren Torman — Arka Yüz (Backend) & Veritabanı Mühendisi:** `/backend` dizini sorumlusu. FastAPI REST API, PostgreSQL veri modelleri, BMR/TDEE makro hesaplama algoritmaları ve API Gateway entegrasyonu.
+* **Ali Eren Özer — Yapay Zekâ (AI / CV & LLM) Mühendisi:** `/ai-service` dizini sorumlusu. Bilgisayarlı görü (OpenCV/YOLO) ile yemek ve porsiyon tahmini, Gemini API diyetisyen sohbet botu ve tıbbi tanı engelleyici etik güvenlik kuralları (guardrails).
 
 ---
 
