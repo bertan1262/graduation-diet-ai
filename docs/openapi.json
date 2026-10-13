@@ -1,0 +1,95 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "DietAI Graduation Project API",
+    "description": "API contract for Mobile Client, Backend, and AI Services.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000/api/v1",
+      "description": "Local Development Server"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": { "description": "Service is healthy" }
+        }
+      }
+    },
+    "/nutrition/analyze-photo": {
+      "post": {
+        "summary": "Analyze food photo for nutrition and portion estimation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image_base64": { "type": "string" }
+                },
+                "required": ["image_base64"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Detected food items and estimated macronutrients" }
+        }
+      }
+    },
+    "/nutrition/calculate-bmr": {
+      "post": {
+        "summary": "Calculate BMR and TDEE calorie/macro targets",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "weight_kg": { "type": "number" },
+                  "height_cm": { "type": "number" },
+                  "age": { "type": "integer" },
+                  "gender": { "type": "string", "enum": ["male", "female"] },
+                  "activity_level": { "type": "string" },
+                  "goal": { "type": "string" }
+                },
+                "required": ["weight_kg", "height_cm", "age", "gender"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "BMR, TDEE, and recommended macros" }
+        }
+      }
+    },
+    "/chat/message": {
+      "post": {
+        "summary": "Interactive dietary guidance chatbot",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": { "type": "string" }
+                },
+                "required": ["message"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Contextual advice with medical boundary guardrails" }
+        }
+      }
+    }
+  }
+}
