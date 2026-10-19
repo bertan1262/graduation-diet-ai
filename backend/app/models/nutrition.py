@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String # type: ignore
+from sqlalchemy.orm import Mapped, mapped_column, relationship # type: ignore
 from app.models.database import Base
 
 if TYPE_CHECKING:

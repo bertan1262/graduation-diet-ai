@@ -1,8 +1,8 @@
 from typing import Generator, Optional
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from beanie import init_beanie
+from sqlalchemy import create_engine # type: ignore
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker # type: ignore
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase # type: ignore
+from beanie import init_beanie # type: ignore
 from app.core.config import settings
 
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter # type: ignore
 from datetime import datetime
 import uuid
 from app.schemas.chat import ChatRequest, ChatResponse
