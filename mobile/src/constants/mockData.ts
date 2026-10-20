@@ -39,10 +39,11 @@ export const INITIAL_TODAY_MEALS: LoggedMealItem[] = [
     carbsGrams: 1.1,
     fatGrams: 10.6,
     loggedAt: '08:30',
+    allergens: ['Yumurta'],
   },
   {
     id: 'meal-2',
-    name: 'Yulaf Ezmesi & Laktozsuz Süt',
+    name: 'Yulaf Ezmesi & Süt',
     portionGrams: 200,
     mealType: 'breakfast',
     calories: 220,
@@ -50,6 +51,7 @@ export const INITIAL_TODAY_MEALS: LoggedMealItem[] = [
     carbsGrams: 36.4,
     fatGrams: 4.2,
     loggedAt: '08:45',
+    allergens: ['Gluten', 'Laktoz'],
   },
   {
     id: 'meal-3',

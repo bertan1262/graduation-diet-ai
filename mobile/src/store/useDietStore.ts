@@ -20,9 +20,11 @@ interface DietStoreState {
   waterIntakeMl: number;
   useMockData: boolean;
   isDarkMode: boolean;
+  hasHydrated: boolean;
 
   // Actions
   addMeal: (meal: Omit<LoggedMealItem, 'id' | 'loggedAt'>) => void;
+  updateMeal: (id: string, updatedFields: Partial<LoggedMealItem>) => void;
   removeMeal: (id: string) => void;
   addWater: (amountMl?: number) => void;
   resetWater: () => void;
@@ -31,6 +33,7 @@ interface DietStoreState {
   resetDay: () => void;
   toggleDarkMode: () => void;
   setDarkMode: (enabled: boolean) => void;
+  setHasHydrated: (state: boolean) => void;
 
   // Computed helper
   getDailySummary: () => DailySummary;
@@ -44,9 +47,11 @@ export const useDietStore = create<DietStoreState>()(
       waterIntakeMl: 1250,
       useMockData: true,
       isDarkMode: false,
+      hasHydrated: false,
 
       toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
       setDarkMode: (enabled) => set({ isDarkMode: enabled }),
+      setHasHydrated: (state) => set({ hasHydrated: state }),
 
       addMeal: (newMeal) => {
         const timeNow = new Intl.DateTimeFormat('tr-TR', {
@@ -62,6 +67,14 @@ export const useDietStore = create<DietStoreState>()(
 
         set((state) => ({
           todayMeals: [createdItem, ...state.todayMeals],
+        }));
+      },
+
+      updateMeal: (id, updatedFields) => {
+        set((state) => ({
+          todayMeals: state.todayMeals.map((m) =>
+            m.id === id ? { ...m, ...updatedFields } : m
+          ),
         }));
       },
 
@@ -130,6 +143,9 @@ export const useDietStore = create<DietStoreState>()(
     {
       name: 'diet-ai-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
       partialize: (state) => ({
         userProfile: state.userProfile,
         todayMeals: state.todayMeals,

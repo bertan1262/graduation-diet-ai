@@ -14,6 +14,7 @@ export interface FoodItemDetection {
   portionGrams: number;
   confidenceScore: number;
   nutrition: NutritionalInfo;
+  allergens?: string[];
 }
 
 export interface RecognitionResponse {
@@ -34,6 +35,21 @@ export interface LoggedMealItem {
   fatGrams: number;
   loggedAt: string; // ISO string or time "12:30"
   imageUrl?: string;
+  allergens?: string[];
+  warningMessage?: string;
+}
+
+export interface DailyAnalyticsRecord {
+  date: string;
+  dayLabel: string;
+  calories: number;
+  targetCalories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
+  waterMl: number;
+  waterGoalMl: number;
+  weightKg: number;
 }
 
 export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';

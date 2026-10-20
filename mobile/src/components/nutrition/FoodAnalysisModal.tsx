@@ -26,6 +26,8 @@ export interface LoggedMealPayload {
   carbsGrams: number;
   fatGrams: number;
   imageUrl?: string;
+  allergens?: string[];
+  warningMessage?: string;
 }
 
 interface FoodAnalysisModalProps {
@@ -213,6 +215,24 @@ export const FoodAnalysisModal: React.FC<FoodAnalysisModalProps> = ({
 
     const plateTitle = plateItems.map((p) => p.foodName).join(' + ');
 
+    // Match allergens against userProfile
+    const userAllergies = useDietStore.getState().userProfile.allergies || [];
+    const detectedAllergens: string[] = [];
+    const lowerPlate = plateTitle.toLowerCase();
+    for (const alg of userAllergies) {
+      const aLower = alg.toLowerCase();
+      if (
+        (aLower.includes('gluten') && (lowerPlate.includes('ekmek') || lowerPlate.includes('buğday') || lowerPlate.includes('makarna') || lowerPlate.includes('un') || lowerPlate.includes('yulaf'))) ||
+        (aLower.includes('laktoz') && (lowerPlate.includes('süt') || lowerPlate.includes('peynir') || lowerPlate.includes('yoğurt') || lowerPlate.includes('hellim'))) ||
+        (aLower.includes('fındık') && (lowerPlate.includes('fındık') || lowerPlate.includes('fıstık') || lowerPlate.includes('ceviz'))) ||
+        (aLower.includes('yumurta') && lowerPlate.includes('yumurta')) ||
+        (aLower.includes('deniz') && (lowerPlate.includes('somon') || lowerPlate.includes('balık') || lowerPlate.includes('ton'))) ||
+        lowerPlate.includes(aLower)
+      ) {
+        detectedAllergens.push(alg);
+      }
+    }
+
     const mealPayload: LoggedMealPayload = {
       name: plateTitle,
       portionGrams: totalPlateGrams,
@@ -222,6 +242,8 @@ export const FoodAnalysisModal: React.FC<FoodAnalysisModalProps> = ({
       carbsGrams: totalPlateCarbs,
       fatGrams: totalPlateFat,
       imageUrl: imageUri || undefined,
+      allergens: detectedAllergens.length > 0 ? detectedAllergens : undefined,
+      warningMessage: detectedAllergens.length > 0 ? `⚠️ ${detectedAllergens.join(', ')} Uyarısı` : undefined,
     };
 
     addMeal(mealPayload);

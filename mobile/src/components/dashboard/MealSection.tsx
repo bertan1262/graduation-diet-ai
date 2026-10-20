@@ -13,6 +13,7 @@ export interface MealSectionProps {
   meals: LoggedMealItem[];
   onDeleteMeal: (id: string) => void;
   onQuickAdd: (mealType: MealType) => void;
+  onEditMeal?: (meal: LoggedMealItem) => void;
 }
 
 export const MealSection: React.FC<MealSectionProps> = ({
@@ -22,6 +23,7 @@ export const MealSection: React.FC<MealSectionProps> = ({
   meals,
   onDeleteMeal,
   onQuickAdd,
+  onEditMeal,
 }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const theme = getThemeColors(isDarkMode);
@@ -57,7 +59,12 @@ export const MealSection: React.FC<MealSectionProps> = ({
       {meals.length > 0 ? (
         <View style={styles.mealsList}>
           {meals.map((meal) => (
-            <MealItemCard key={meal.id} meal={meal} onDelete={onDeleteMeal} />
+            <MealItemCard
+              key={meal.id}
+              meal={meal}
+              onDelete={onDeleteMeal}
+              onEdit={onEditMeal}
+            />
           ))}
         </View>
       ) : (
