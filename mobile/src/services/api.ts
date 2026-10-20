@@ -1,9 +1,37 @@
 import { RecognitionResponse, ChatMessage, MealPlanDay } from '../types';
+import { useDietStore } from '../store/useDietStore';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-const USE_MOCK = process.env.EXPO_PUBLIC_USE_MOCK_DATA === 'true';
+const getApiBaseUrl = (): string => {
+  return process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+};
 
-// Mock data to enable instant parallel mobile UI development
+const isMockEnabled = (): boolean => {
+  try {
+    const storeMock = useDietStore.getState().useMockData;
+    if (typeof storeMock === 'boolean') {
+      return storeMock;
+    }
+  } catch {
+    // If invoked before Zustand hydration
+  }
+  return process.env.EXPO_PUBLIC_USE_MOCK_DATA !== 'false';
+};
+
+// Network timeout helper to prevent hanging requests on mobile networks
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 8000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (error) {
+    clearTimeout(timer);
+    throw error;
+  }
+}
+
+// Mock data to enable instant parallel mobile UI development & offline reliability
 const MOCK_RECOGNITION: RecognitionResponse = {
   timestamp: new Date().toISOString(),
   detectedFoods: [
@@ -43,25 +71,43 @@ const MOCK_RECOGNITION: RecognitionResponse = {
 
 export const apiService = {
   /**
+   * Returns current effective API configuration
+   */
+  getConfig() {
+    return {
+      baseUrl: getApiBaseUrl(),
+      isMock: isMockEnabled(),
+    };
+  },
+
+  /**
    * Analyze food image from camera/gallery
    */
   async analyzeFoodImage(imageBase64: string): Promise<RecognitionResponse> {
-    if (USE_MOCK) {
-      // Simulate network latency
+    if (isMockEnabled()) {
+      // Simulate realistic AI inference latency
       await new Promise((r) => setTimeout(r, 1200));
       return MOCK_RECOGNITION;
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/nutrition/analyze-photo`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_base64: imageBase64 }),
-      });
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      const baseUrl = getApiBaseUrl();
+      const response = await fetchWithTimeout(
+        `${baseUrl}/nutrition/analyze-photo`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: imageBase64 }),
+        },
+        10000
+      );
+
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}`);
+      }
       return await response.json();
     } catch (err) {
-      console.warn('API call failed, falling back to mock data:', err);
+      console.warn('Live API call failed, falling back to deterministic mock data:', err);
       return MOCK_RECOGNITION;
     }
   },
@@ -70,28 +116,66 @@ export const apiService = {
    * Send message to the dietary assistant chatbot with medical guardrail
    */
   async sendChatMessage(messageText: string): Promise<ChatMessage> {
-    if (USE_MOCK) {
+    if (isMockEnabled()) {
       await new Promise((r) => setTimeout(r, 800));
       return {
         id: `msg-${Date.now()}`,
         sender: 'assistant',
-        content: `Günlük makro hedeflerinize göre protein alımınız dengeli görünüyor! "${messageText}" konusuna ilişkin sağlıklı alternatifleri değerlendirebilirsiniz. Unutmayın, bu tavsiyeler genel beslenme rehberliği amaçlıdır.`,
+        content: `Günlük makro hedeflerinize göre beslenme planınız dengeli ilerliyor! "${messageText}" konusuna ilişkin sağlıklı alternatifleri değerlendirebilirsiniz. Unutmayın, bu tavsiyeler genel beslenme rehberliği amaçlıdır.`,
         timestamp: new Date().toISOString(),
       };
     }
 
-    const response = await fetch(`${API_BASE_URL}/chat/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: messageText }),
-    });
-    return await response.json();
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetchWithTimeout(
+        `${baseUrl}/chat/message`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: messageText }),
+        },
+        8000
+      );
+
+      if (!response.ok) {
+        throw new Error(`Chat API error: ${response.status}`);
+      }
+      return await response.json();
+    } catch (err) {
+      console.warn('Chat API failed, falling back to offline guardrail response:', err);
+      return {
+        id: `msg-${Date.now()}`,
+        sender: 'assistant',
+        content: `(Çevrimdışı Rehber) "${messageText}" sorunuz incelendi. Canlı sunucuya şu an ulaşılamıyor, ancak genel kural olarak porsiyon kontrolü ve yeterli su tüketimi hedeflerinize ulaşmanıza yardımcı olacaktır.`,
+        timestamp: new Date().toISOString(),
+      };
+    }
   },
 
   /**
    * Get personalized weekly meal plan
    */
   async getMealPlan(): Promise<MealPlanDay[]> {
+    if (!isMockEnabled()) {
+      try {
+        const baseUrl = getApiBaseUrl();
+        const response = await fetchWithTimeout(
+          `${baseUrl}/nutrition/meal-plan`,
+          {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          },
+          5000
+        );
+        if (response.ok) {
+          return await response.json();
+        }
+      } catch (err) {
+        console.warn('Meal plan API failed, using fallback plan:', err);
+      }
+    }
+
     return [
       {
         dayName: 'Pazartesi',

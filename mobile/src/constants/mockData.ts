@@ -1,0 +1,81 @@
+import { UserProfile, LoggedMealItem, FoodItemDetection } from '../types';
+
+export const DEFAULT_USER_PROFILE: UserProfile = {
+  name: 'Bertan Beyal',
+  gender: 'male',
+  age: 22,
+  heightCm: 180,
+  weightKg: 76,
+  targetWeightKg: 72,
+  activityLevel: 'moderate',
+  dietaryGoal: 'weight_loss',
+  bmr: 1750,
+  tdee: 2400,
+  targetCalories: 2100,
+  targetProteinGrams: 135,
+  targetCarbsGrams: 210,
+  targetFatGrams: 65,
+  waterGoalMl: 2500,
+  allergies: ['🥜 Fıstık (Hafif)', '🥛 Laktoz (Düşük Tolerans)'],
+};
+
+export const INITIAL_TODAY_MEALS: LoggedMealItem[] = [
+  {
+    id: 'meal-1',
+    name: 'Haşlanmış Yumurta (2 Adet)',
+    portionGrams: 100,
+    mealType: 'breakfast',
+    calories: 155,
+    proteinGrams: 13.0,
+    carbsGrams: 1.1,
+    fatGrams: 10.6,
+    loggedAt: '08:30',
+  },
+  {
+    id: 'meal-2',
+    name: 'Yulaf Ezmesi & Laktozsuz Süt',
+    portionGrams: 200,
+    mealType: 'breakfast',
+    calories: 220,
+    proteinGrams: 8.5,
+    carbsGrams: 36.4,
+    fatGrams: 4.2,
+    loggedAt: '08:45',
+  },
+  {
+    id: 'meal-3',
+    name: 'Izgara Tavuk Göğsü',
+    portionGrams: 180,
+    mealType: 'lunch',
+    calories: 297,
+    proteinGrams: 55.8,
+    carbsGrams: 0.0,
+    fatGrams: 6.5,
+    loggedAt: '12:45',
+  },
+  {
+    id: 'meal-4',
+    name: 'Kinoa & Akdeniz Salatası',
+    portionGrams: 150,
+    mealType: 'lunch',
+    calories: 185,
+    proteinGrams: 5.2,
+    carbsGrams: 28.4,
+    fatGrams: 6.1,
+    loggedAt: '13:00',
+  },
+];
+
+export const MOCK_DETECTED_MEAL: FoodItemDetection = {
+  id: 'detected-chicken-quinoa',
+  foodName: 'Izgara Tavuk Göğsü & Kinoa Salatası',
+  portionGrams: 200,
+  confidenceScore: 0.94,
+  nutrition: {
+    calories: 385,
+    proteinGrams: 42.5,
+    carbsGrams: 28.0,
+    fatGrams: 9.2,
+    fiberGrams: 4.5,
+  },
+};
