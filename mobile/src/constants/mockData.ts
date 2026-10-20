@@ -17,6 +17,15 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
   targetFatGrams: 65,
   waterGoalMl: 2500,
   allergies: ['🥜 Fıstık (Hafif)', '🥛 Laktoz (Düşük Tolerans)'],
+  doesSports: true,
+  sportsDaysPerWeek: 3,
+  calculationBasis: 'current',
+  hasDiabetes: false,
+  hasCholesterol: false,
+  hasHypertension: false,
+  bmrFormulaUsed: 'revised_harris_benedict',
+  idealWeightKg: 68.0,
+  bmi: 23.46,
 };
 
 export const INITIAL_TODAY_MEALS: LoggedMealItem[] = [

@@ -200,6 +200,16 @@ export const ProfileScreen: React.FC = () => {
           </Text>
         </View>
 
+        {/* Clinical Formula & Basis Badge */}
+        <View style={styles.clinicalHeaderBadge}>
+          <Text style={styles.clinicalHeaderBadgeTitle}>
+            🧬 {userProfile.bmrFormulaUsed === 'mifflin_st_jeor' ? 'Klinik Motor: Mifflin-St Jeor (BMI > 30)' : 'Klinik Motor: Revised Harris-Benedict (BMI ≤ 30)'}
+          </Text>
+          <Text style={styles.clinicalHeaderBadgeSub}>
+            🎯 Yaşa Göre İdeal Kilo: {userProfile.idealWeightKg || Math.round(22 * Math.pow(userProfile.heightCm / 100, 2) * 10) / 10} kg • Baz: {userProfile.calculationBasis === 'ideal' ? 'İdeal Kilo' : 'Mevcut Kilo'}
+          </Text>
+        </View>
+
         {/* Edit / Recalculate CTA Button */}
         <TouchableOpacity
           style={styles.editProfileButton}
@@ -262,12 +272,30 @@ export const ProfileScreen: React.FC = () => {
 
       {/* Target Macros & Nutrition Plan */}
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>⚡ Mifflin-St Jeor Metabolizma Telemetrisi</Text>
+        <Text style={styles.sectionTitle}>⚡ Klinik Metabolizma & BMR Telemetrisi</Text>
 
         <View style={styles.row}>
           <Text style={styles.rowLabel}>Günlük Kalori Hedefi</Text>
           <Text style={[styles.rowValue, { color: theme.primary, fontSize: 18 }]}>
             {userProfile.targetCalories} kcal
+          </Text>
+        </View>
+        <View style={styles.divider} />
+
+        <View style={styles.row}>
+          <Text style={styles.rowLabel}>Klinik BMR Formülü</Text>
+          <Text style={[styles.rowValue, { color: theme.primary }]}>
+            {userProfile.bmrFormulaUsed === 'mifflin_st_jeor'
+              ? 'Mifflin-St Jeor (BMI > 30)'
+              : 'Revised Harris-Benedict (BMI ≤ 30)'}
+          </Text>
+        </View>
+        <View style={styles.divider} />
+
+        <View style={styles.row}>
+          <Text style={styles.rowLabel}>Hesaplama Dayanağı</Text>
+          <Text style={styles.rowValue}>
+            {userProfile.calculationBasis === 'ideal' ? '🎯 İdeal Kilo Bazlı' : '⚖️ Mevcut Kilo Bazlı'}
           </Text>
         </View>
         <View style={styles.divider} />
@@ -281,6 +309,41 @@ export const ProfileScreen: React.FC = () => {
         <View style={styles.row}>
           <Text style={styles.rowLabel}>TDEE (Toplam Harcama)</Text>
           <Text style={styles.rowValue}>{userProfile.tdee} kcal</Text>
+        </View>
+        <View style={styles.divider} />
+
+        <View style={styles.row}>
+          <Text style={styles.rowLabel}>Spor & Egzersiz Rutini</Text>
+          <Text style={styles.rowValue}>
+            {userProfile.doesSports
+              ? `🏃 Haftada ${userProfile.sportsDaysPerWeek || 3} Gün`
+              : '🚶 Düzenli Spor Yok'}
+          </Text>
+        </View>
+        <View style={styles.divider} />
+
+        <View style={styles.row}>
+          <Text style={styles.rowLabel}>Kronik Sağlık Durumu</Text>
+          <View style={styles.clinicalTagsContainer}>
+            {userProfile.hasDiabetes && (
+              <View style={[styles.conditionTag, { backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2' }]}>
+                <Text style={[styles.conditionTagText, { color: theme.danger }]}>🩸 Diyabet</Text>
+              </View>
+            )}
+            {userProfile.hasCholesterol && (
+              <View style={[styles.conditionTag, { backgroundColor: isDarkMode ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7' }]}>
+                <Text style={[styles.conditionTagText, { color: theme.calories }]}>🫀 Kolesterol</Text>
+              </View>
+            )}
+            {userProfile.hasHypertension && (
+              <View style={[styles.conditionTag, { backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.2)' : '#F3E8FF' }]}>
+                <Text style={[styles.conditionTagText, { color: '#9333EA' }]}>🩺 Hipertansiyon</Text>
+              </View>
+            )}
+            {!userProfile.hasDiabetes && !userProfile.hasCholesterol && !userProfile.hasHypertension && (
+              <Text style={[styles.rowValue, { color: theme.textMuted }]}>Kronik risk faktörü yok</Text>
+            )}
+          </View>
         </View>
         <View style={styles.divider} />
 
@@ -519,6 +582,42 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       backgroundColor: theme.surfaceSubtle,
     },
     bmiText: {
+      ...Typography.tiny,
+      fontWeight: '700',
+    },
+    clinicalHeaderBadge: {
+      marginTop: Spacing.sm,
+      paddingVertical: Spacing.xs,
+      paddingHorizontal: Spacing.md,
+      borderRadius: BorderRadius.md,
+      borderWidth: 1,
+      borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#A7F3D0',
+      backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
+      alignItems: 'center',
+    },
+    clinicalHeaderBadgeTitle: {
+      ...Typography.tiny,
+      fontWeight: '700',
+      color: isDarkMode ? theme.primary : Colors.primaryDark,
+    },
+    clinicalHeaderBadgeSub: {
+      ...Typography.tiny,
+      color: theme.textSecondary,
+      marginTop: 2,
+    },
+    clinicalTagsContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.xs,
+      justifyContent: 'flex-end',
+      maxWidth: '60%',
+    },
+    conditionTag: {
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 3,
+      borderRadius: BorderRadius.xs,
+    },
+    conditionTagText: {
       ...Typography.tiny,
       fontWeight: '700',
     },
