@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, SafeAreaView, Platform, StatusBar as RNStatusBar } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, SafeAreaView, Platform, StatusBar as RNStatusBar, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { getThemeColors } from './src/constants/colors';
 import { useDietStore } from './src/store/useDietStore';
@@ -13,8 +13,24 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
-  const { isDarkMode } = useDietStore();
+  const { isDarkMode, checkAndRollOverDay } = useDietStore();
   const theme = getThemeColors(isDarkMode);
+
+  useEffect(() => {
+    // Check if midnight rolled over on mount
+    checkAndRollOverDay();
+
+    // Re-check whenever user returns to the app from background
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkAndRollOverDay();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [checkAndRollOverDay]);
 
   const renderActiveScreen = () => {
     switch (activeTab) {

@@ -21,6 +21,7 @@ interface DietStoreState {
   useMockData: boolean;
   isDarkMode: boolean;
   hasHydrated: boolean;
+  lastActiveDate: string;
 
   // Actions
   addMeal: (meal: Omit<LoggedMealItem, 'id' | 'loggedAt'>) => void;
@@ -34,6 +35,7 @@ interface DietStoreState {
   toggleDarkMode: () => void;
   setDarkMode: (enabled: boolean) => void;
   setHasHydrated: (state: boolean) => void;
+  checkAndRollOverDay: () => void;
 
   // Computed helper
   getDailySummary: () => DailySummary;
@@ -48,12 +50,31 @@ export const useDietStore = create<DietStoreState>()(
       useMockData: true,
       isDarkMode: false,
       hasHydrated: false,
+      lastActiveDate: new Intl.DateTimeFormat('en-CA').format(new Date()),
 
       toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
       setDarkMode: (enabled) => set({ isDarkMode: enabled }),
       setHasHydrated: (state) => set({ hasHydrated: state }),
 
+      checkAndRollOverDay: () => {
+        const todayDate = new Intl.DateTimeFormat('en-CA').format(new Date());
+        const { lastActiveDate } = get();
+
+        // If app rolls over to a new calendar date, clear today's meal and water trackers
+        if (lastActiveDate && lastActiveDate !== todayDate) {
+          set({
+            todayMeals: [],
+            waterIntakeMl: 0,
+            lastActiveDate: todayDate,
+          });
+        } else if (!lastActiveDate) {
+          set({ lastActiveDate: todayDate });
+        }
+      },
+
       addMeal: (newMeal) => {
+        get().checkAndRollOverDay();
+
         const timeNow = new Intl.DateTimeFormat('tr-TR', {
           hour: '2-digit',
           minute: '2-digit',
@@ -85,6 +106,8 @@ export const useDietStore = create<DietStoreState>()(
       },
 
       addWater: (amountMl = 250) => {
+        get().checkAndRollOverDay();
+
         set((state) => ({
           waterIntakeMl: Math.max(0, state.waterIntakeMl + amountMl),
         }));
@@ -105,9 +128,11 @@ export const useDietStore = create<DietStoreState>()(
       },
 
       resetDay: () => {
+        const todayDate = new Intl.DateTimeFormat('en-CA').format(new Date());
         set({
           todayMeals: [],
           waterIntakeMl: 0,
+          lastActiveDate: todayDate,
         });
       },
 
@@ -145,6 +170,7 @@ export const useDietStore = create<DietStoreState>()(
       storage: createJSONStorage(() => AsyncStorage),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
+        state?.checkAndRollOverDay();
       },
       partialize: (state) => ({
         userProfile: state.userProfile,
@@ -152,6 +178,7 @@ export const useDietStore = create<DietStoreState>()(
         waterIntakeMl: state.waterIntakeMl,
         useMockData: state.useMockData,
         isDarkMode: state.isDarkMode,
+        lastActiveDate: state.lastActiveDate,
       }),
     }
   )
