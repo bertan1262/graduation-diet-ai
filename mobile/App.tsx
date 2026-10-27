@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, SafeAreaView, Platform, StatusBar as RNStatusBar, AppState } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  SafeAreaView,
+  Platform,
+  StatusBar as RNStatusBar,
+  AppState,
+} from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { getThemeColors } from './src/constants/colors';
 import { useDietStore } from './src/store/useDietStore';
@@ -10,10 +17,16 @@ import { MealPlanScreen } from './src/screens/MealPlanScreen';
 import { CameraScreen } from './src/screens/CameraScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
+import { OnboardingScreen } from './src/screens/OnboardingScreen';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
-  const { isDarkMode, checkAndRollOverDay } = useDietStore();
+  const {
+    isDarkMode,
+    checkAndRollOverDay,
+    hasCompletedOnboarding,
+    setHasCompletedOnboarding,
+  } = useDietStore();
   const theme = getThemeColors(isDarkMode);
 
   useEffect(() => {
@@ -39,7 +52,7 @@ export default function App() {
       case 'plan':
         return <MealPlanScreen />;
       case 'camera':
-        return <CameraScreen />;
+        return <CameraScreen onNavigateToDashboard={() => setActiveTab('dashboard')} />;
       case 'chat':
         return <ChatScreen />;
       case 'profile':
@@ -66,6 +79,21 @@ export default function App() {
     }
   };
 
+  if (!hasCompletedOnboarding) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+        <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+        <OnboardingScreen
+          isEditing={false}
+          onComplete={() => {
+            setHasCompletedOnboarding(true);
+            setActiveTab('dashboard');
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <StatusBar style={isDarkMode ? 'light' : 'dark'} />
@@ -77,7 +105,9 @@ export default function App() {
       />
 
       {/* Dynamic Screen Body */}
-      <View style={[styles.body, { backgroundColor: theme.background }]}>{renderActiveScreen()}</View>
+      <View style={[styles.body, { backgroundColor: theme.background }]}>
+        {renderActiveScreen()}
+      </View>
 
       {/* Bottom Floating Navigation Bar */}
       <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
@@ -88,7 +118,7 @@ export default function App() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    paddingTop: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 0,
+    paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight || 0 : 0,
   },
   body: {
     flex: 1,

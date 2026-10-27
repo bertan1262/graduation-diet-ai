@@ -14,6 +14,7 @@ export interface ScanningOverlayProps {
   imageUri: string;
   onScanComplete: () => void;
   onCancel: () => void;
+  onRunInBackground?: () => void;
 }
 
 const STAGES = [
@@ -29,6 +30,7 @@ export const ScanningOverlay: React.FC<ScanningOverlayProps> = ({
   imageUri,
   onScanComplete,
   onCancel,
+  onRunInBackground,
 }) => {
   const [stageIndex, setStageIndex] = useState(0);
 
@@ -178,6 +180,19 @@ export const ScanningOverlay: React.FC<ScanningOverlayProps> = ({
                 ]}
               />
             </View>
+
+            {/* Phase 3.1: Cal AI Non-Blocking Background Analysis Action */}
+            {onRunInBackground && (
+              <TouchableOpacity
+                style={styles.backgroundModeBtn}
+                onPress={onRunInBackground}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.backgroundModeBtnText}>
+                  ⚡ Arka Planda Analiz Et & Gezinmeye Devam Et →
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -380,5 +395,19 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.full,
+  },
+  backgroundModeBtn: {
+    marginTop: Spacing.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    alignItems: 'center',
+  },
+  backgroundModeBtnText: {
+    ...Typography.captionBold,
+    color: Colors.primaryLight,
   },
 });

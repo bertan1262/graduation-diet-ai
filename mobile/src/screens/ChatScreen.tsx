@@ -16,7 +16,7 @@ import { ChatBubble } from '../components/chat/ChatBubble';
 import { QuickPromptChips } from '../components/chat/QuickPromptChips';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
 import { useDietStore } from '../store/useDietStore';
-import { apiService } from '../services/api';
+import { apiService, isMedicalQuery } from '../services/api';
 
 export const ChatScreen: React.FC = () => {
   const userProfile = useDietStore((state) => state.userProfile);
@@ -53,18 +53,15 @@ export const ChatScreen: React.FC = () => {
   };
 
   // Smart Contextual AI Dietitian Responder
-  const generateDietitianResponse = (userPrompt: string): { content: string; isMedicalWarning?: boolean } => {
+  const generateDietitianResponse = (
+    userPrompt: string
+  ): {
+    content: string;
+    isMedicalWarning?: boolean;
+  } => {
     const query = userPrompt.toLowerCase();
 
-    if (
-      query.includes('ilaç') ||
-      query.includes('tedavi') ||
-      query.includes('hastalık') ||
-      query.includes('ağrı') ||
-      query.includes('reçete') ||
-      query.includes('tansiyon') ||
-      query.includes('diyabet')
-    ) {
+    if (isMedicalQuery(query)) {
       return {
         content:
           'Sağlığınız her şeyden önemlidir. DietAI genel beslenme ve kalori rehberliği sunar; tıbbi tanı koyamaz ve ilaç tedavisi öneremez. Lütfen bu durumu mutlaka hekiminize veya uzman bir klinik diyetisyene danışınız.',
@@ -104,7 +101,7 @@ export const ChatScreen: React.FC = () => {
       };
     }
 
-    if (query.includes('tatlı') || query.includes('şeker') || query.includes('kriz')) {
+    if (query.includes('tatlı') || query.includes('şeker') || query.includes('kriz') || query.includes('ara öğün')) {
       return {
         content:
           'Tatlı krizleri genellikle kan şekeri dalgalanması veya yetersiz proteinden kaynaklanır. Bitter çikolata (%80+), bir avuç badem ile tarçınlı yeşil elma dilimleri veya kakaolu lor tatlısı krizleri sağlıklı şekilde durdurur. 🍎🍫',
@@ -154,6 +151,7 @@ export const ChatScreen: React.FC = () => {
       }, 750);
     } else {
       // Live backend integration with graceful offline fallback
+      const localEnrichment = generateDietitianResponse(trimmed);
       apiService
         .sendChatMessage(trimmed)
         .then((liveMessage) => {
@@ -161,20 +159,22 @@ export const ChatScreen: React.FC = () => {
             ...prev,
             {
               ...liveMessage,
+              isMedicalWarning: Boolean(
+                liveMessage.isMedicalWarning || liveMessage.safety_flag_triggered
+              ),
               timestamp: getTimeString(),
             },
           ]);
         })
         .catch(() => {
-          const fallback = generateDietitianResponse(trimmed);
           setMessages((prev) => [
             ...prev,
             {
               id: `assistant-${Date.now()}`,
               sender: 'assistant',
-              content: fallback.content,
+              content: localEnrichment.content,
               timestamp: getTimeString(),
-              isMedicalWarning: fallback.isMedicalWarning,
+              isMedicalWarning: localEnrichment.isMedicalWarning,
             },
           ]);
         })
@@ -221,7 +221,7 @@ export const ChatScreen: React.FC = () => {
         <TextInput
           style={styles.textInput}
           placeholder="Diyetisyeninize bir soru sorun..."
-          placeholderTextColor={Colors.textPlaceholder}
+          placeholderTextColor={theme.textPlaceholder}
           value={inputText}
           onChangeText={setInputText}
           multiline={true}
@@ -277,41 +277,6 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       paddingHorizontal: Spacing.md,
       paddingTop: Spacing.sm,
       paddingBottom: Spacing.lg,
-    },
-    typingIndicatorContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginVertical: Spacing.xs,
-      marginLeft: Spacing.xs,
-    },
-    typingAvatar: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      backgroundColor: isDarkMode ? '#1E293B' : Colors.primaryMuted,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 6,
-    },
-    typingAvatarText: {
-      fontSize: 12,
-    },
-    typingPill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: theme.surface,
-      paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.xs + 2,
-      borderRadius: BorderRadius.full,
-      borderWidth: 1,
-      borderColor: theme.border,
-      ...Shadows.subtle,
-    },
-    typingText: {
-      ...Typography.tiny,
-      color: theme.textMuted,
-      marginLeft: 6,
-      fontStyle: 'italic',
     },
     inputContainer: {
       flexDirection: 'row',

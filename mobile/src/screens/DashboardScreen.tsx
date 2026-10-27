@@ -1,5 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
 import { Colors, getThemeColors, ThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { LoggedMealItem, MealType } from '../types';
@@ -10,6 +18,8 @@ import { WaterTracker } from '../components/dashboard/WaterTracker';
 import { MealSection } from '../components/dashboard/MealSection';
 import { WeeklyProgressChart } from '../components/dashboard/WeeklyProgressChart';
 import { EditPortionModal } from '../components/nutrition/EditPortionModal';
+import { FoodAnalysisModal } from '../components/nutrition/FoodAnalysisModal';
+import { RecipeBuilderModal } from '../components/nutrition/RecipeBuilderModal';
 import { AnalyticsScreen } from './AnalyticsScreen';
 
 export const DashboardScreen: React.FC = () => {
@@ -17,6 +27,9 @@ export const DashboardScreen: React.FC = () => {
     userProfile,
     todayMeals,
     waterIntakeMl,
+    streakDays,
+    pendingAnalysis,
+    clearPendingAnalysis,
     addWater,
     addMeal,
     updateMeal,
@@ -29,7 +42,11 @@ export const DashboardScreen: React.FC = () => {
   const summary = getDailySummary();
 
   const [activeSegment, setActiveSegment] = useState<'today' | 'analytics'>('today');
-  const [selectedMealForEdit, setSelectedMealForEdit] = useState<LoggedMealItem | null>(null);
+  const [selectedMealForEdit, setSelectedMealForEdit] = useState<LoggedMealItem | null>(
+    null
+  );
+  const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
+  const [isRecipeBuilderOpen, setIsRecipeBuilderOpen] = useState(false);
 
   const handleQuickAdd = (mealType: MealType) => {
     const presets: Record<
@@ -41,6 +58,7 @@ export const DashboardScreen: React.FC = () => {
         proteinGrams: number;
         carbsGrams: number;
         fatGrams: number;
+        fiberGrams: number;
         allergens?: string[];
       }
     > = {
@@ -51,6 +69,7 @@ export const DashboardScreen: React.FC = () => {
         proteinGrams: 22,
         carbsGrams: 6,
         fatGrams: 18,
+        fiberGrams: 1.8,
         allergens: ['Yumurta', 'Laktoz'],
       },
       lunch: {
@@ -60,6 +79,7 @@ export const DashboardScreen: React.FC = () => {
         proteinGrams: 35,
         carbsGrams: 30,
         fatGrams: 20,
+        fiberGrams: 5.2,
         allergens: ['Deniz Ürünleri'],
       },
       dinner: {
@@ -69,6 +89,7 @@ export const DashboardScreen: React.FC = () => {
         proteinGrams: 38,
         carbsGrams: 32,
         fatGrams: 19,
+        fiberGrams: 6.4,
         allergens: ['Gluten'],
       },
       snack: {
@@ -78,6 +99,7 @@ export const DashboardScreen: React.FC = () => {
         proteinGrams: 6,
         carbsGrams: 24,
         fatGrams: 8,
+        fiberGrams: 4.5,
         allergens: ['Fındık / Fıstık'],
       },
     };
@@ -91,6 +113,7 @@ export const DashboardScreen: React.FC = () => {
       proteinGrams: preset.proteinGrams,
       carbsGrams: preset.carbsGrams,
       fatGrams: preset.fatGrams,
+      fiberGrams: preset.fiberGrams,
       allergens: preset.allergens,
     });
   };
@@ -104,16 +127,29 @@ export const DashboardScreen: React.FC = () => {
           onPress={() => setActiveSegment('today')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.segmentText, activeSegment === 'today' && styles.segmentTextActive]}>
+          <Text
+            style={[
+              styles.segmentText,
+              activeSegment === 'today' && styles.segmentTextActive,
+            ]}
+          >
             📊 Günün Özeti
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.segmentBtn, activeSegment === 'analytics' && styles.segmentBtnActive]}
+          style={[
+            styles.segmentBtn,
+            activeSegment === 'analytics' && styles.segmentBtnActive,
+          ]}
           onPress={() => setActiveSegment('analytics')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.segmentText, activeSegment === 'analytics' && styles.segmentTextActive]}>
+          <Text
+            style={[
+              styles.segmentText,
+              activeSegment === 'analytics' && styles.segmentTextActive,
+            ]}
+          >
             📈 Gelişim & Analiz
           </Text>
         </TouchableOpacity>
@@ -122,9 +158,114 @@ export const DashboardScreen: React.FC = () => {
       {activeSegment === 'analytics' ? (
         <AnalyticsScreen />
       ) : (
-        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Phase 3.1: Cal AI Asynchronous Background Food Analyzing Card */}
+          {pendingAnalysis.status !== 'idle' && (
+            <View
+              style={[
+                styles.bgAnalysisCard,
+                pendingAnalysis.status === 'ready' && styles.bgAnalysisCardReady,
+              ]}
+            >
+              <View style={styles.bgAnalysisRow}>
+                {pendingAnalysis.imageUri ? (
+                  <Image
+                    source={{ uri: pendingAnalysis.imageUri }}
+                    style={styles.bgAnalysisThumb}
+                  />
+                ) : (
+                  <View style={styles.bgAnalysisThumbPlaceholder}>
+                    <Text style={{ fontSize: 22 }}>🍽️</Text>
+                  </View>
+                )}
+
+                <View style={styles.bgAnalysisInfo}>
+                  <View style={styles.bgStatusBadgeRow}>
+                    {pendingAnalysis.status === 'analyzing' ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={theme.primary}
+                        style={{ marginRight: 6 }}
+                      />
+                    ) : (
+                      <Text style={{ fontSize: 13, marginRight: 4 }}>✨</Text>
+                    )}
+                    <Text style={styles.bgAnalysisBadgeText}>
+                      {pendingAnalysis.status === 'analyzing'
+                        ? 'ARKA PLANDA ANALİZ EDİLİYOR...'
+                        : 'YAPAY ZEKA ANALİZİ TAMAMLANDI!'}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.bgAnalysisTitle} numberOfLines={1}>
+                    {pendingAnalysis.status === 'analyzing'
+                      ? 'Tabağınızdaki besinler hesaplanıyor'
+                      : pendingAnalysis.detectedFoods &&
+                        pendingAnalysis.detectedFoods.length > 0
+                      ? pendingAnalysis.detectedFoods.map((f) => f.foodName).join(' + ')
+                      : 'Izgara Tavuk Göğsü + Kinoa Salatası'}
+                  </Text>
+
+                  <Text style={styles.bgAnalysisSub}>
+                    {pendingAnalysis.status === 'analyzing'
+                      ? 'Beklemeden günlüğünüzde gezinmeye devam edebilirsiniz.'
+                      : 'Porsiyonları incelemek ve günlüğe kaydetmek için dokunun.'}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  onPress={clearPendingAnalysis}
+                  style={styles.bgDismissBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.bgDismissText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              {pendingAnalysis.status === 'ready' && (
+                <TouchableOpacity
+                  style={styles.bgReviewButton}
+                  onPress={() => setIsPendingModalOpen(true)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.bgReviewButtonText}>
+                    🍽️ Tabağı İncele & Günlüğe Onayla
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {/* Daily Target & Circular Calorie Ring Card */}
           <View style={styles.card}>
+            {/* Phase 1.1: Cal AI Gamification Row (Streak + Health Score 0-100 Badge) */}
+            <View style={styles.gamificationRow}>
+              <View style={styles.streakPill}>
+                <Text style={styles.streakIcon}>🔥</Text>
+                <Text style={styles.streakText}>{streakDays} Günlük Seri</Text>
+              </View>
+
+              <View
+                style={[
+                  styles.healthScorePill,
+                  summary.healthScore >= 80
+                    ? styles.healthScoreHigh
+                    : summary.healthScore >= 50
+                    ? styles.healthScoreMid
+                    : styles.healthScoreLow,
+                ]}
+              >
+                <Text style={styles.healthScoreEmoji}>🛡️</Text>
+                <Text style={styles.healthScoreValue}>
+                  Sağlık Skoru: {summary.healthScore}/100
+                </Text>
+                <Text style={styles.healthScoreSub}>• {summary.healthScoreLabel}</Text>
+              </View>
+            </View>
+
             <View style={styles.cardHeaderRow}>
               <Text style={styles.cardTitle}>Günün Kalori Dengesi</Text>
               <View style={styles.percentBadge}>
@@ -159,7 +300,7 @@ export const DashboardScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Reactive Macronutrients Card */}
+          {/* Reactive Macronutrients & Micronutrients Accordion Card */}
           <View style={styles.card}>
             <MacroBar
               proteinGrams={summary.totalProtein}
@@ -168,6 +309,9 @@ export const DashboardScreen: React.FC = () => {
               targetCarbsGrams={userProfile.targetCarbsGrams}
               fatGrams={summary.totalFat}
               targetFatGrams={userProfile.targetFatGrams}
+              fiberGrams={summary.totalFiber}
+              sugarGrams={summary.totalSugar}
+              sodiumMg={summary.totalSodium}
             />
           </View>
 
@@ -183,10 +327,20 @@ export const DashboardScreen: React.FC = () => {
           {/* Categorized Meals Card */}
           <View style={styles.card}>
             <View style={styles.mealsHeaderRow}>
-              <Text style={styles.sectionTitle}>Bugün Tüketilen Öğünler</Text>
-              <View style={styles.countBadge}>
-                <Text style={styles.countBadgeText}>{todayMeals.length} Öğün</Text>
+              <View>
+                <Text style={styles.sectionTitle}>Bugün Tüketilen Öğünler</Text>
+                <Text style={styles.mealsSubtitleText}>
+                  {todayMeals.length} kayıtlı öğün • Birim ve gramaj düzenlenebilir
+                </Text>
               </View>
+
+              <TouchableOpacity
+                style={styles.recipeBuilderBtn}
+                onPress={() => setIsRecipeBuilderOpen(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.recipeBuilderBtnText}>👩‍🍳 Özel Tarif</Text>
+              </TouchableOpacity>
             </View>
 
             <MealSection
@@ -243,6 +397,25 @@ export const DashboardScreen: React.FC = () => {
         onSave={(updated) => updateMeal(updated.id, updated)}
         onDelete={removeMeal}
       />
+
+      {/* Phase 3.1: Background Analysis Review Modal */}
+      <FoodAnalysisModal
+        visible={isPendingModalOpen}
+        imageUri={pendingAnalysis.imageUri || null}
+        detectedFood={pendingAnalysis.detectedFood}
+        detectedFoods={pendingAnalysis.detectedFoods}
+        onClose={() => setIsPendingModalOpen(false)}
+        onConfirm={() => {
+          setIsPendingModalOpen(false);
+          clearPendingAnalysis();
+        }}
+      />
+
+      {/* Phase 4.2: Waistline Custom Recipe Builder Modal */}
+      <RecipeBuilderModal
+        visible={isRecipeBuilderOpen}
+        onClose={() => setIsRecipeBuilderOpen(false)}
+      />
     </View>
   );
 };
@@ -252,6 +425,149 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
     container: {
       padding: Spacing.lg,
       backgroundColor: theme.background,
+    },
+    bgAnalysisCard: {
+      backgroundColor: theme.surface,
+      borderRadius: BorderRadius.xl,
+      padding: Spacing.md,
+      borderWidth: 1.5,
+      borderColor: theme.calories,
+      marginBottom: Spacing.lg,
+      ...Shadows.card,
+    },
+    bgAnalysisCardReady: {
+      borderColor: theme.primary,
+      backgroundColor: isDarkMode ? '#064E3B' : '#ECFDF5',
+    },
+    bgAnalysisRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    bgAnalysisThumb: {
+      width: 54,
+      height: 54,
+      borderRadius: BorderRadius.lg,
+      marginRight: Spacing.md,
+      borderWidth: 1.5,
+      borderColor: theme.primary,
+    },
+    bgAnalysisThumbPlaceholder: {
+      width: 54,
+      height: 54,
+      borderRadius: BorderRadius.lg,
+      backgroundColor: theme.surfaceSubtle,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: Spacing.md,
+    },
+    bgAnalysisInfo: {
+      flex: 1,
+    },
+    bgStatusBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 2,
+    },
+    bgAnalysisBadgeText: {
+      ...Typography.tiny,
+      fontSize: 10,
+      fontWeight: '800',
+      color: theme.primary,
+      letterSpacing: 0.6,
+    },
+    bgAnalysisTitle: {
+      ...Typography.bodyBold,
+      color: theme.textPrimary,
+    },
+    bgAnalysisSub: {
+      ...Typography.tiny,
+      color: theme.textSecondary,
+      marginTop: 1,
+    },
+    bgDismissBtn: {
+      padding: 6,
+      marginLeft: 4,
+    },
+    bgDismissText: {
+      fontSize: 14,
+      color: theme.textMuted,
+      fontWeight: '700',
+    },
+    bgReviewButton: {
+      marginTop: Spacing.sm,
+      backgroundColor: theme.primary,
+      paddingVertical: Spacing.sm,
+      borderRadius: BorderRadius.lg,
+      alignItems: 'center',
+    },
+    bgReviewButtonText: {
+      ...Typography.captionBold,
+      color: '#FFFFFF',
+    },
+    gamificationRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: Spacing.md,
+      paddingBottom: Spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+      flexWrap: 'wrap',
+      gap: 6,
+    },
+    streakPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: isDarkMode ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7',
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: BorderRadius.full,
+      borderWidth: 1,
+      borderColor: isDarkMode ? 'rgba(245, 158, 11, 0.4)' : '#FDE68A',
+    },
+    streakIcon: {
+      fontSize: 13,
+      marginRight: 4,
+    },
+    streakText: {
+      ...Typography.tiny,
+      color: isDarkMode ? '#FCD34D' : '#B45309',
+      fontWeight: '800',
+    },
+    healthScorePill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: BorderRadius.full,
+      borderWidth: 1,
+    },
+    healthScoreHigh: {
+      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
+      borderColor: theme.primary,
+    },
+    healthScoreMid: {
+      backgroundColor: isDarkMode ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE',
+      borderColor: Colors.protein,
+    },
+    healthScoreLow: {
+      backgroundColor: theme.surfaceSubtle,
+      borderColor: theme.border,
+    },
+    healthScoreEmoji: {
+      fontSize: 12,
+      marginRight: 4,
+    },
+    healthScoreValue: {
+      ...Typography.tiny,
+      fontWeight: '800',
+      color: theme.textPrimary,
+    },
+    healthScoreSub: {
+      ...Typography.tiny,
+      fontSize: 10,
+      color: theme.textSecondary,
+      marginLeft: 4,
     },
     card: {
       backgroundColor: theme.surface,
@@ -321,19 +637,26 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       ...Typography.h3,
       color: theme.textPrimary,
     },
+    mealsSubtitleText: {
+      ...Typography.tiny,
+      color: theme.textMuted,
+      marginTop: 1,
+    },
     mealsHeaderRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: Spacing.md,
     },
-    countBadge: {
+    recipeBuilderBtn: {
       backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
-      paddingHorizontal: Spacing.sm,
-      paddingVertical: 2,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 6,
       borderRadius: BorderRadius.full,
+      borderWidth: 1,
+      borderColor: theme.primary,
     },
-    countBadgeText: {
+    recipeBuilderBtnText: {
       ...Typography.tiny,
       color: isDarkMode ? theme.primary : Colors.primaryDark,
       fontWeight: '700',

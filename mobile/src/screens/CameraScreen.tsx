@@ -8,16 +8,23 @@ import {
   Image,
   Alert,
 } from 'react-native';
-import { CameraView, useCameraPermissions, CameraType, FlashMode, BarcodeScanningResult } from 'expo-camera';
+import {
+  CameraView,
+  useCameraPermissions,
+  CameraType,
+  FlashMode,
+  BarcodeScanningResult,
+} from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { Colors } from '../constants/colors';
+import { Colors, getThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { CaptureButton } from '../components/camera/CaptureButton';
 import { ScanningOverlay } from '../components/camera/ScanningOverlay';
 import { FoodAnalysisModal } from '../components/nutrition/FoodAnalysisModal';
 import { apiService } from '../services/api';
 import { fetchProductByBarcode } from '../services/openFoodFacts';
-import { FoodItemDetection } from '../types';
+import { FoodItemDetection, RecognitionResponse } from '../types';
+import { useDietStore } from '../store/useDietStore';
 
 export interface CapturedPhotoData {
   uri: string;
@@ -26,7 +33,17 @@ export interface CapturedPhotoData {
   height?: number;
 }
 
-export const CameraScreen: React.FC = () => {
+export interface CameraScreenProps {
+  onNavigateToDashboard?: () => void;
+}
+
+export const CameraScreen: React.FC<CameraScreenProps> = ({
+  onNavigateToDashboard,
+}) => {
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const startBackgroundAnalysis = useDietStore((state) => state.startBackgroundAnalysis);
+  const theme = getThemeColors(isDarkMode);
+
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<CameraType>('back');
   const [flash, setFlash] = useState<FlashMode>('off');
@@ -37,11 +54,13 @@ export const CameraScreen: React.FC = () => {
   const [capturedImage, setCapturedImage] = useState<CapturedPhotoData | null>(null);
   const [isAnalysisModalVisible, setIsAnalysisModalVisible] = useState<boolean>(false);
   const [detectedFood, setDetectedFood] = useState<FoodItemDetection | undefined>(undefined);
+  const [detectedFoods, setDetectedFoods] = useState<FoodItemDetection[] | undefined>(undefined);
   const [isBarcodeLoading, setIsBarcodeLoading] = useState<boolean>(false);
   const [scannedBarcodeText, setScannedBarcodeText] = useState<string | null>(null);
 
   const cameraRef = useRef<CameraView>(null);
   const lastScannedTimeRef = useRef<number>(0);
+  const recognitionPromiseRef = useRef<Promise<RecognitionResponse | void> | null>(null);
 
   // Cycle flash modes: off -> on -> auto -> off
   const handleCycleFlash = () => {
@@ -79,8 +98,11 @@ export const CameraScreen: React.FC = () => {
       const result = await fetchProductByBarcode(data);
 
       setDetectedFood(result.detection);
+      setDetectedFoods([result.detection]);
       setCapturedImage({
-        uri: result.imageUrl || 'https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80',
+        uri:
+          result.imageUrl ||
+          'https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80',
       });
       // Directly open the bottom sheet FoodAnalysisModal with the recognized product nutrition
       setIsAnalysisModalVisible(true);
@@ -112,6 +134,7 @@ export const CameraScreen: React.FC = () => {
       setIsCapturing(true);
 
       let imageUri: string | null = null;
+      let imageBase64: string | null | undefined = null;
       let width: number | undefined;
       let height: number | undefined;
 
@@ -119,46 +142,59 @@ export const CameraScreen: React.FC = () => {
         try {
           const photo = await cameraRef.current.takePictureAsync({
             quality: 0.7,
+            base64: true,
             skipProcessing: false,
           });
 
           if (photo?.uri) {
             imageUri = photo.uri;
+            imageBase64 = photo.base64;
             width = photo.width;
             height = photo.height;
           }
         } catch (camErr) {
-          console.warn('Cihaz kamerasından çekim alınamadı, yedek mock görsel ile devam ediliyor:', camErr);
+          console.warn(
+            'Cihaz kamerasından çekim alınamadı, yedek mock görsel ile devam ediliyor:',
+            camErr
+          );
         }
       }
 
       // Fail-safe fallback: If native camera hardware stalled or runs on simulator, guarantee 100% laser scan success
       if (!imageUri) {
-        imageUri = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1000&q=80';
+        imageUri =
+          'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1000&q=80';
       }
 
       setCapturedImage({
         uri: imageUri,
+        base64: imageBase64,
         width,
         height,
       });
       // Directly activate futuristic laser scan on captured frame (Zero intermediate friction)
       setIsScanning(true);
 
-      // Concurrently query AI vision recognition service (live or mock)
-      apiService
-        .analyzeFoodImage(imageUri)
+      // Concurrently query AI vision recognition service (live or mock) using Base64 data
+      const payloadToAnalyze = imageBase64 || imageUri;
+      recognitionPromiseRef.current = apiService
+        .analyzeFoodImage(payloadToAnalyze)
         .then((res) => {
           if (res?.detectedFoods && res.detectedFoods.length > 0) {
             setDetectedFood(res.detectedFoods[0]);
+            setDetectedFoods(res.detectedFoods);
           }
+          return res;
         })
         .catch((err) => {
           console.warn('Food recognition error:', err);
         });
     } catch (error) {
       console.error('Fotoğraf çekilirken hata oluştu:', error);
-      Alert.alert('Çekim Hatası', 'Fotoğraf kaydedilirken bir hata oluştu. Lütfen tekrar deneyin.');
+      Alert.alert(
+        'Çekim Hatası',
+        'Fotoğraf kaydedilirken bir hata oluştu. Lütfen tekrar deneyin.'
+      );
     } finally {
       setIsCapturing(false);
     }
@@ -182,6 +218,7 @@ export const CameraScreen: React.FC = () => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.7,
+        base64: true,
         selectionLimit: 1,
       });
 
@@ -189,19 +226,23 @@ export const CameraScreen: React.FC = () => {
         const asset = result.assets[0];
         setCapturedImage({
           uri: asset.uri,
+          base64: asset.base64,
           width: asset.width,
           height: asset.height,
         });
         // Immediately start laser scan on picked gallery image
         setIsScanning(true);
 
-        // Concurrently query AI vision recognition service (live or mock)
-        apiService
-          .analyzeFoodImage(asset.uri)
+        // Concurrently query AI vision recognition service (live or mock) using Base64 data
+        const payloadToAnalyze = asset.base64 || asset.uri;
+        recognitionPromiseRef.current = apiService
+          .analyzeFoodImage(payloadToAnalyze)
           .then((res) => {
             if (res?.detectedFoods && res.detectedFoods.length > 0) {
               setDetectedFood(res.detectedFoods[0]);
+              setDetectedFoods(res.detectedFoods);
             }
+            return res;
           })
           .catch((err) => {
             console.warn('Food recognition error:', err);
@@ -222,11 +263,40 @@ export const CameraScreen: React.FC = () => {
     }
   };
 
+  // Phase 3.1: Cal AI Non-Blocking Background Analysis Mode
+  const handleRunInBackground = () => {
+    if (!capturedImage) return;
+    const activeUri = capturedImage.uri;
+    const delayedPromise = new Promise<RecognitionResponse | void>((resolve) => {
+      setTimeout(async () => {
+        if (recognitionPromiseRef.current) {
+          try {
+            const res = await recognitionPromiseRef.current;
+            resolve(res);
+            return;
+          } catch {
+            // Fall through
+          }
+        }
+        resolve();
+      }, 2200);
+    });
+
+    startBackgroundAnalysis(activeUri, delayedPromise);
+    setIsScanning(false);
+    setCapturedImage(null);
+    if (onNavigateToDashboard) {
+      onNavigateToDashboard();
+    }
+  };
+
   // Cancel scanning and return to live camera feed
   const handleCancelScan = () => {
+    recognitionPromiseRef.current = null;
     setIsScanning(false);
     setCapturedImage(null);
     setDetectedFood(undefined);
+    setDetectedFoods(undefined);
     if (cameraRef.current) {
       try {
         cameraRef.current.resumePreview();
@@ -236,8 +306,16 @@ export const CameraScreen: React.FC = () => {
     }
   };
 
-  // Handle Scan Complete: Launch Day 11 Bottom Sheet FoodAnalysisModal
-  const handleScanComplete = () => {
+  // Handle Scan Complete: Await any pending recognition before launching FoodAnalysisModal
+  const handleScanComplete = async () => {
+    if (recognitionPromiseRef.current) {
+      try {
+        await recognitionPromiseRef.current;
+      } catch {
+        // Handled in catch above
+      }
+      recognitionPromiseRef.current = null;
+    }
     setIsScanning(false);
     setIsAnalysisModalVisible(true);
   };
@@ -247,6 +325,7 @@ export const CameraScreen: React.FC = () => {
     setIsAnalysisModalVisible(false);
     setCapturedImage(null);
     setDetectedFood(undefined);
+    setDetectedFoods(undefined);
     if (cameraRef.current) {
       try {
         cameraRef.current.resumePreview();
@@ -260,6 +339,8 @@ export const CameraScreen: React.FC = () => {
   const handleConfirmMeal = () => {
     setIsAnalysisModalVisible(false);
     setCapturedImage(null);
+    setDetectedFood(undefined);
+    setDetectedFoods(undefined);
     if (cameraRef.current) {
       try {
         cameraRef.current.resumePreview();
@@ -269,7 +350,7 @@ export const CameraScreen: React.FC = () => {
     }
     Alert.alert(
       '🎉 Başarıyla Kaydedildi!',
-      'Yemek günlük beslenme listenize eklendi. Günlük kalori ve makro ilerlemeniz anında güncellendi.',
+      'Yemek günlük beslenme listenize eklendi. Günlük kalori, sağlık skoru ve makro ilerlemeniz anında güncellendi.',
       [{ text: 'Harika!' }]
     );
   };
@@ -277,9 +358,11 @@ export const CameraScreen: React.FC = () => {
   // Loading state while checking system permissions
   if (!permission) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Kamera izinleri kontrol ediliyor...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={[styles.loadingText, { color: theme.textMuted }]}>
+          Kamera izinleri kontrol ediliyor...
+        </Text>
       </View>
     );
   }
@@ -287,42 +370,73 @@ export const CameraScreen: React.FC = () => {
   // Permission not granted: Display aesthetic permission onboarding view
   if (!permission.granted) {
     return (
-      <View style={styles.permissionContainer}>
-        <View style={styles.permissionCard}>
+      <View style={[styles.permissionContainer, { backgroundColor: theme.background }]}>
+        <View
+          style={[
+            styles.permissionCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
           {/* Illustrative Icon Badge */}
-          <View style={styles.iconCircle}>
+          <View
+            style={[
+              styles.iconCircle,
+              { backgroundColor: theme.primaryMuted, borderColor: theme.primaryLight },
+            ]}
+          >
             <Text style={styles.cameraIcon}>📸</Text>
           </View>
 
-          <Text style={styles.badgeText}>KAMERA ERİŞİMİ</Text>
-          <Text style={styles.title}>Akıllı Yemek Tarayıcısı</Text>
-          <Text style={styles.subtitle}>
+          <Text
+            style={[
+              styles.badgeText,
+              { color: isDarkMode ? theme.primary : Colors.primaryDark },
+            ]}
+          >
+            KAMERA ERİŞİMİ
+          </Text>
+          <Text style={[styles.title, { color: theme.textPrimary }]}>
+            Akıllı Yemek Tarayıcısı
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.textMuted }]}>
             DietAI yapay zekâsının tabağınızdaki yiyecekleri tanıması, porsiyonlarını hesaplaması ve besin değerlerini saniyeler içinde analiz etmesi için kamera erişimi gereklidir.
           </Text>
 
           {/* Feature Highlights */}
           <View style={styles.featuresList}>
-            <View style={styles.featureItem}>
+            <View style={[styles.featureItem, { backgroundColor: theme.surfaceSubtle }]}>
               <Text style={styles.featureIcon}>⚡</Text>
               <View style={styles.featureTextGroup}>
-                <Text style={styles.featureTitle}>Anında Yemek Tespiti</Text>
-                <Text style={styles.featureDesc}>Tabağı vizöre gösterin, yapay zekâ analiz etsin.</Text>
+                <Text style={[styles.featureTitle, { color: theme.textPrimary }]}>
+                  Anında Yemek Tespiti
+                </Text>
+                <Text style={[styles.featureDesc, { color: theme.textMuted }]}>
+                  Tabağı vizöre gösterin, yapay zekâ analiz etsin.
+                </Text>
               </View>
             </View>
 
-            <View style={styles.featureItem}>
+            <View style={[styles.featureItem, { backgroundColor: theme.surfaceSubtle }]}>
               <Text style={styles.featureIcon}>🥗</Text>
               <View style={styles.featureTextGroup}>
-                <Text style={styles.featureTitle}>Otomatik Porsiyon & Makrolar</Text>
-                <Text style={styles.featureDesc}>Kalori, protein, karbonhidrat ve yağ dengesini çıkarır.</Text>
+                <Text style={[styles.featureTitle, { color: theme.textPrimary }]}>
+                  Otomatik Porsiyon & Makrolar
+                </Text>
+                <Text style={[styles.featureDesc, { color: theme.textMuted }]}>
+                  Kalori, protein, karbonhidrat ve yağ dengesini çıkarır.
+                </Text>
               </View>
             </View>
 
-            <View style={styles.featureItem}>
+            <View style={[styles.featureItem, { backgroundColor: theme.surfaceSubtle }]}>
               <Text style={styles.featureIcon}>🔒</Text>
               <View style={styles.featureTextGroup}>
-                <Text style={styles.featureTitle}>Gizlilik Odaklı</Text>
-                <Text style={styles.featureDesc}>Fotoğraflarınız yalnızca besin analizi amacıyla işlenir.</Text>
+                <Text style={[styles.featureTitle, { color: theme.textPrimary }]}>
+                  Gizlilik Odaklı
+                </Text>
+                <Text style={[styles.featureDesc, { color: theme.textMuted }]}>
+                  Fotoğraflarınız yalnızca besin analizi amacıyla işlenir.
+                </Text>
               </View>
             </View>
           </View>
@@ -357,6 +471,7 @@ export const CameraScreen: React.FC = () => {
             imageUri={capturedImage.uri}
             onScanComplete={handleScanComplete}
             onCancel={handleCancelScan}
+            onRunInBackground={handleRunInBackground}
           />
         ) : (
           <Image
@@ -371,6 +486,7 @@ export const CameraScreen: React.FC = () => {
           visible={isAnalysisModalVisible}
           imageUri={capturedImage.uri}
           detectedFood={detectedFood}
+          detectedFoods={detectedFoods}
           onClose={handleCloseModal}
           onConfirm={handleConfirmMeal}
         />
@@ -410,7 +526,9 @@ export const CameraScreen: React.FC = () => {
           <View style={styles.instructionPill}>
             <Text style={styles.instructionDot}>●</Text>
             <Text style={styles.instructionText}>
-              {cameraMode === 'barcode' ? 'Barkodu vizöre hizalayın' : 'Tabağı vizöre hizalayın'}
+              {cameraMode === 'barcode'
+                ? 'Barkodu vizöre hizalayın'
+                : 'Tabağı vizöre hizalayın'}
             </Text>
           </View>
 
@@ -424,7 +542,12 @@ export const CameraScreen: React.FC = () => {
             onPress={() => setCameraMode('photo')}
             activeOpacity={0.8}
           >
-            <Text style={[styles.modeTabText, cameraMode === 'photo' && styles.modeTabTextActive]}>
+            <Text
+              style={[
+                styles.modeTabText,
+                cameraMode === 'photo' && styles.modeTabTextActive,
+              ]}
+            >
               📸 Yemek Tanıma
             </Text>
           </TouchableOpacity>
@@ -434,7 +557,12 @@ export const CameraScreen: React.FC = () => {
             onPress={() => setCameraMode('barcode')}
             activeOpacity={0.8}
           >
-            <Text style={[styles.modeTabText, cameraMode === 'barcode' && styles.modeTabTextActive]}>
+            <Text
+              style={[
+                styles.modeTabText,
+                cameraMode === 'barcode' && styles.modeTabTextActive,
+              ]}
+            >
               🏷️ Paket / Barkod
             </Text>
           </TouchableOpacity>
@@ -463,7 +591,9 @@ export const CameraScreen: React.FC = () => {
               <View style={styles.barcodeLaserLine} />
 
               <Text style={styles.barcodeHintText}>
-                {isBarcodeLoading ? 'Veritabanı Aranıyor...' : 'Barkodu Çizgiye Hizalayın'}
+                {isBarcodeLoading
+                  ? 'Veritabanı Aranıyor...'
+                  : 'Barkodu Çizgiye Hizalayın'}
               </Text>
               <Text style={styles.barcodeSubHintText}>EAN-13 • UPC • Open Food Facts</Text>
             </View>
@@ -475,7 +605,9 @@ export const CameraScreen: React.FC = () => {
           <View style={styles.barcodeLoadingBadge}>
             <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
             <Text style={styles.barcodeLoadingText}>
-              {scannedBarcodeText ? `Barkod Okundu (${scannedBarcodeText}) • Çözümleniyor...` : 'Ürün Aranıyor...'}
+              {scannedBarcodeText
+                ? `Barkod Okundu (${scannedBarcodeText}) • Çözümleniyor...`
+                : 'Ürün Aranıyor...'}
             </Text>
           </View>
         )}
@@ -795,70 +927,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
     marginTop: 1,
-  },
-  previewBadge: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    alignItems: 'center',
-    alignSelf: 'center',
-    marginTop: Spacing.sm,
-  },
-  previewBadgeText: {
-    ...Typography.captionBold,
-    color: Colors.textInverse,
-  },
-  previewSubBadgeText: {
-    ...Typography.tiny,
-    color: Colors.primaryLight,
-    marginTop: 2,
-  },
-  reviewActionsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.md,
-    paddingBottom: Spacing.xl,
-  },
-  retakeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    paddingVertical: Spacing.lg,
-    borderRadius: BorderRadius.xl,
-  },
-  retakeButtonIcon: {
-    fontSize: 16,
-    marginRight: Spacing.xs,
-  },
-  retakeButtonText: {
-    ...Typography.bodyBold,
-    color: '#FFFFFF',
-  },
-  analyzeButton: {
-    flex: 1.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primary,
-    paddingVertical: Spacing.lg,
-    borderRadius: BorderRadius.xl,
-    ...Shadows.card,
-  },
-  analyzeButtonIcon: {
-    fontSize: 16,
-    marginRight: Spacing.xs,
-  },
-  analyzeButtonText: {
-    ...Typography.bodyBold,
-    color: Colors.textInverse,
   },
   modeSwitcherContainer: {
     flexDirection: 'row',

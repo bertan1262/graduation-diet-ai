@@ -30,6 +30,13 @@ const MEAL_TYPE_OPTIONS: { type: MealType; label: string; icon: string }[] = [
   { type: 'snack', label: 'Ara Öğün', icon: '🍎' },
 ];
 
+const QUICK_SERVING_UNITS = [
+  { label: '1 Dilim', grams: 30, icon: '🍞' },
+  { label: '1 Adet', grams: 60, icon: '🥚' },
+  { label: '1 Porsiyon', grams: 180, icon: '🍽️' },
+  { label: '1 Kase', grams: 220, icon: '🥣' },
+];
+
 export const EditPortionModal: React.FC<EditPortionModalProps> = ({
   visible,
   meal,
@@ -49,12 +56,18 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
     baseProtein: number;
     baseCarbs: number;
     baseFat: number;
+    baseFiber: number;
+    baseSugar: number;
+    baseSodium: number;
   }>({
     baseGrams: 150,
     baseCalories: 250,
     baseProtein: 20,
     baseCarbs: 20,
     baseFat: 10,
+    baseFiber: 3.0,
+    baseSugar: 2.0,
+    baseSodium: 220,
   });
 
   useEffect(() => {
@@ -68,6 +81,9 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
         baseProtein: meal.proteinGrams,
         baseCarbs: meal.carbsGrams,
         baseFat: meal.fatGrams,
+        baseFiber: meal.fiberGrams ?? Math.round((meal.carbsGrams || 0) * 0.14 * 10) / 10,
+        baseSugar: meal.sugarGrams ?? Math.round((meal.carbsGrams || 0) * 0.11 * 10) / 10,
+        baseSodium: meal.sodiumMg ?? Math.round((meal.calories || 100) * 1.1),
       });
     }
   }, [meal]);
@@ -78,6 +94,9 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
   const currentProtein = Math.max(0, Math.round(baseRatio.baseProtein * scale * 10) / 10);
   const currentCarbs = Math.max(0, Math.round(baseRatio.baseCarbs * scale * 10) / 10);
   const currentFat = Math.max(0, Math.round(baseRatio.baseFat * scale * 10) / 10);
+  const currentFiber = Math.max(0, Math.round(baseRatio.baseFiber * scale * 10) / 10);
+  const currentSugar = Math.max(0, Math.round(baseRatio.baseSugar * scale * 10) / 10);
+  const currentSodium = Math.max(0, Math.round(baseRatio.baseSodium * scale));
 
   // Quick portion increment / decrement
   const handleAdjustGrams = (delta: number) => {
@@ -159,6 +178,9 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
       proteinGrams: currentProtein,
       carbsGrams: currentCarbs,
       fatGrams: currentFat,
+      fiberGrams: currentFiber,
+      sugarGrams: currentSugar,
+      sodiumMg: currentSodium,
       warningMessage: safetyWarnings.length > 0 ? safetyWarnings[0].title : undefined,
     };
     onSave(updated);
@@ -254,6 +276,39 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
               })}
             </View>
 
+            {/* Quick Serving Unit Presets (Waistline & Cal AI Standard) */}
+            <Text style={styles.sectionHeading}>Hızlı Birim Seçici</Text>
+            <View style={styles.quickUnitsRow}>
+              {QUICK_SERVING_UNITS.map((u) => {
+                const isActive = Math.abs(portionGrams - u.grams) <= 5;
+                return (
+                  <TouchableOpacity
+                    key={u.label}
+                    style={[
+                      styles.quickUnitChip,
+                      isActive && {
+                        backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
+                        borderColor: theme.primary,
+                      },
+                    ]}
+                    onPress={() => setPortionGrams(u.grams)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.quickUnitIcon}>{u.icon}</Text>
+                    <Text
+                      style={[
+                        styles.quickUnitLabel,
+                        isActive && { color: theme.primary, fontWeight: '700' },
+                      ]}
+                    >
+                      {u.label}
+                    </Text>
+                    <Text style={styles.quickUnitSub}>{u.grams}g</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             {/* Grammage Controller */}
             <Text style={styles.sectionHeading}>Tüketilen Miktar (Gram)</Text>
             <View style={styles.gramControlRow}>
@@ -337,6 +392,21 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
                 <Text style={styles.nutritionCardLabel}>Yağ</Text>
               </View>
             </View>
+
+            {/* Micronutrients Row (Fiber, Sugar, Sodium) */}
+            <View style={styles.microSummaryRow}>
+              <Text style={styles.microSummaryText}>
+                🌾 Lif: <Text style={styles.microBold}>{currentFiber}g</Text>
+              </Text>
+              <Text style={styles.microDot}>•</Text>
+              <Text style={styles.microSummaryText}>
+                🍯 Şeker: <Text style={styles.microBold}>{currentSugar}g</Text>
+              </Text>
+              <Text style={styles.microDot}>•</Text>
+              <Text style={styles.microSummaryText}>
+                🧂 Sodyum: <Text style={styles.microBold}>{currentSodium}mg</Text>
+              </Text>
+            </View>
           </ScrollView>
 
           {/* Action Buttons Footer */}
@@ -376,7 +446,7 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       borderTopLeftRadius: BorderRadius.xxl,
       borderTopRightRadius: BorderRadius.xxl,
       padding: Spacing.xl,
-      maxHeight: '85%',
+      maxHeight: '88%',
       borderWidth: 1,
       borderColor: theme.border,
       ...Shadows.card,
@@ -464,6 +534,34 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       ...Typography.tiny,
       color: theme.textSecondary,
     },
+    quickUnitsRow: {
+      flexDirection: 'row',
+      gap: Spacing.xs,
+    },
+    quickUnitChip: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 6,
+      paddingHorizontal: 4,
+      borderRadius: BorderRadius.md,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.surfaceSubtle,
+    },
+    quickUnitIcon: {
+      fontSize: 14,
+      marginBottom: 1,
+    },
+    quickUnitLabel: {
+      ...Typography.tiny,
+      color: theme.textPrimary,
+      fontWeight: '600',
+    },
+    quickUnitSub: {
+      ...Typography.tiny,
+      fontSize: 9,
+      color: theme.textMuted,
+    },
     gramControlRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -528,6 +626,28 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       ...Typography.tiny,
       color: theme.textMuted,
       textAlign: 'center',
+    },
+    microSummaryRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: Spacing.sm,
+      paddingVertical: Spacing.xs,
+      backgroundColor: theme.surfaceSubtle,
+      borderRadius: BorderRadius.md,
+      gap: Spacing.sm,
+    },
+    microSummaryText: {
+      ...Typography.tiny,
+      color: theme.textSecondary,
+    },
+    microBold: {
+      fontWeight: '700',
+      color: theme.textPrimary,
+    },
+    microDot: {
+      color: theme.textMuted,
+      fontSize: 10,
     },
     footerRow: {
       flexDirection: 'row',

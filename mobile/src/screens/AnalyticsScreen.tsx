@@ -1,21 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
   Share,
   Alert,
+  Image,
+  PanResponder,
+  LayoutChangeEvent,
 } from 'react-native';
-import Svg, { Rect, Line, Text as SvgText, Circle } from 'react-native-svg';
+import Svg, { Rect, Line, Text as SvgText } from 'react-native-svg';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors, getThemeColors, ThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useDietStore } from '../store/useDietStore';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CHART_WIDTH = SCREEN_WIDTH - Spacing.lg * 2 - Spacing.xl * 2;
 const BAR_CHART_HEIGHT = 160;
 
 interface DayHistoryItem {
@@ -30,13 +32,103 @@ interface DayHistoryItem {
 }
 
 export const AnalyticsScreen: React.FC = () => {
-  const { userProfile, todayMeals, waterIntakeMl, isDarkMode } = useDietStore();
+  const {
+    userProfile,
+    todayMeals,
+    waterIntakeMl,
+    progressPhotos,
+    addProgressPhoto,
+    isDarkMode,
+  } = useDietStore();
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = Math.max(240, screenWidth - Spacing.lg * 2 - Spacing.xl * 2);
+
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
 
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(6); // Default to today
+  const [splitPercent, setSplitPercent] = useState<number>(50);
+  const sliderWidthRef = useRef<number>(280);
+  const startSplitRef = useRef<number>(50);
 
-  // Build reactive 7-day dataset with current day dynamically linked to todayMeals
+  const clampSplit = (val: number) => Math.max(12, Math.min(88, val));
+
+  const splitPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gs) => Math.abs(gs.dx) > 2,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (evt) => {
+        if (sliderWidthRef.current > 0 && evt.nativeEvent.locationX !== undefined) {
+          const pct = clampSplit(
+            Math.round((evt.nativeEvent.locationX / sliderWidthRef.current) * 100)
+          );
+          startSplitRef.current = pct;
+          setSplitPercent(pct);
+        }
+      },
+      onPanResponderMove: (_evt, gs) => {
+        if (sliderWidthRef.current > 0) {
+          const deltaPct = (gs.dx / sliderWidthRef.current) * 100;
+          setSplitPercent(clampSplit(Math.round(startSplitRef.current + deltaPct)));
+        }
+      },
+    })
+  ).current;
+
+  const handleSliderLayout = (e: LayoutChangeEvent) => {
+    sliderWidthRef.current = e.nativeEvent.layout.width || 280;
+  };
+
+  const beforePhoto = progressPhotos[0] || {
+    id: 'before-fallback',
+    dateStr: 'Başlangıç',
+    weightKg: (userProfile.weightKg || 76) + 3.4,
+    imageUri:
+      'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=600&q=80',
+    label: 'Başlangıç (1. Gün)',
+  };
+
+  const afterPhoto = progressPhotos[progressPhotos.length - 1] || {
+    id: 'after-fallback',
+    dateStr: 'Bugün',
+    weightKg: userProfile.weightKg || 76,
+    imageUri:
+      'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80',
+    label: 'Güncel Durum',
+  };
+
+  const weightDiff = Math.round((afterPhoto.weightKg - beforePhoto.weightKg) * 10) / 10;
+
+  const handleAddProgressPhoto = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.75,
+        selectionLimit: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const todayStr = new Intl.DateTimeFormat('tr-TR', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        }).format(new Date());
+
+        addProgressPhoto({
+          dateStr: todayStr,
+          weightKg: userProfile.weightKg || 76,
+          imageUri: asset.uri,
+          label: `Güncel (${todayStr})`,
+        });
+      }
+    } catch {
+      Alert.alert('Bilgi', 'Galeriden fotoğraf seçilemedi.');
+    }
+  };
+
+  // Build reactive 7-day dataset with real calendar dates and current day dynamically linked to todayMeals
   const weeklyData: DayHistoryItem[] = useMemo(() => {
     const todayCalories = todayMeals.reduce((acc, m) => acc + m.calories, 0);
     const todayProtein = Math.round(todayMeals.reduce((acc, m) => acc + m.proteinGrams, 0));
@@ -44,70 +136,47 @@ export const AnalyticsScreen: React.FC = () => {
     const todayFat = Math.round(todayMeals.reduce((acc, m) => acc + m.fatGrams, 0));
 
     const target = userProfile.targetCalories || 2100;
+    const now = new Date();
+    const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
+      day: 'numeric',
+      month: 'short',
+    });
+    const weekdayFormatter = new Intl.DateTimeFormat('tr-TR', { weekday: 'short' });
+
+    const historicalTemplates = [
+      { calRatio: 0.94, protein: 110, carbs: 180, fat: 55, waterMl: 2500 },
+      { calRatio: 1.02, protein: 135, carbs: 195, fat: 62, waterMl: 2750 },
+      { calRatio: 0.98, protein: 125, carbs: 170, fat: 58, waterMl: 2250 },
+      { calRatio: 0.91, protein: 105, carbs: 160, fat: 50, waterMl: 3000 },
+      { calRatio: 1.05, protein: 140, carbs: 210, fat: 65, waterMl: 2500 },
+      { calRatio: 0.99, protein: 130, carbs: 190, fat: 60, waterMl: 2000 },
+    ];
+
+    const pastDays: DayHistoryItem[] = historicalTemplates.map((tpl, idx) => {
+      const daysAgo = 6 - idx;
+      const d = new Date(now);
+      d.setDate(now.getDate() - daysAgo);
+      return {
+        dayLabel: weekdayFormatter.format(d),
+        dateStr: dateFormatter.format(d),
+        calories: Math.round(target * tpl.calRatio),
+        protein: tpl.protein,
+        carbs: tpl.carbs,
+        fat: tpl.fat,
+        waterMl: tpl.waterMl,
+      };
+    });
 
     return [
-      {
-        dayLabel: 'Pzt',
-        dateStr: '14 Eki',
-        calories: Math.round(target * 0.94),
-        protein: 110,
-        carbs: 180,
-        fat: 55,
-        waterMl: 2500,
-      },
-      {
-        dayLabel: 'Sal',
-        dateStr: '15 Eki',
-        calories: Math.round(target * 1.02),
-        protein: 135,
-        carbs: 195,
-        fat: 62,
-        waterMl: 2750,
-      },
-      {
-        dayLabel: 'Çar',
-        dateStr: '16 Eki',
-        calories: Math.round(target * 0.98),
-        protein: 125,
-        carbs: 170,
-        fat: 58,
-        waterMl: 2250,
-      },
-      {
-        dayLabel: 'Per',
-        dateStr: '17 Eki',
-        calories: Math.round(target * 0.91),
-        protein: 105,
-        carbs: 160,
-        fat: 50,
-        waterMl: 3000,
-      },
-      {
-        dayLabel: 'Cum',
-        dateStr: '18 Eki',
-        calories: Math.round(target * 1.05),
-        protein: 140,
-        carbs: 210,
-        fat: 65,
-        waterMl: 2500,
-      },
-      {
-        dayLabel: 'Cmt',
-        dateStr: '19 Eki',
-        calories: Math.round(target * 0.99),
-        protein: 130,
-        carbs: 190,
-        fat: 60,
-        waterMl: 2000,
-      },
+      ...pastDays,
       {
         dayLabel: 'Bugün',
-        dateStr: '20 Eki',
-        calories: todayCalories > 0 ? todayCalories : Math.round(target * 0.88),
-        protein: todayProtein > 0 ? todayProtein : 95,
-        carbs: todayCarbs > 0 ? todayCarbs : 140,
-        fat: todayFat > 0 ? todayFat : 45,
-        waterMl: waterIntakeMl > 0 ? waterIntakeMl : 1750,
+        dateStr: dateFormatter.format(now),
+        calories: todayCalories,
+        protein: todayProtein,
+        carbs: todayCarbs,
+        fat: todayFat,
+        waterMl: waterIntakeMl,
         isToday: true,
       },
     ];
@@ -128,6 +197,8 @@ export const AnalyticsScreen: React.FC = () => {
         100
     )
   );
+  const waterGoal = userProfile.waterGoalMl || 2500;
+  const waterDisciplineCount = weeklyData.filter((d) => d.waterMl >= waterGoal * 0.8).length;
 
   // Macro percentages for selected day
   const totalMacroGrams = selectedDay.protein + selectedDay.carbs + selectedDay.fat;
@@ -139,26 +210,37 @@ export const AnalyticsScreen: React.FC = () => {
     totalMacroGrams > 0 ? Math.round((selectedDay.fat / totalMacroGrams) * 100) : 25;
 
   // Max value for bar chart scaling
-  const maxCal = Math.max(...weeklyData.map((d) => d.calories), targetCal * 1.15);
+  const maxCal = Math.max(...weeklyData.map((d) => d.calories), targetCal * 1.15, 100);
   const chartHeightInner = BAR_CHART_HEIGHT - 35;
 
   // PDF Export / Share Simulation
   const handleExportReport = async () => {
     try {
-      const summaryText = `📋 DietAI Haftalık Klinik Beslenme Raporu\n` +
+      const summaryText =
+        `📋 DietAI Haftalık Klinik Beslenme Raporu\n` +
         `👤 Kullanıcı: ${userProfile.name} (${userProfile.age} Yaş, ${userProfile.weightKg} kg)\n` +
-        `🎯 Hedef: ${userProfile.dietaryGoal === 'weight_loss' ? 'Kilo Verme' : userProfile.dietaryGoal === 'muscle_gain' ? 'Kas Kazanımı' : 'Form Koruma'}\n` +
+        `🎯 Hedef: ${
+          userProfile.dietaryGoal === 'weight_loss'
+            ? 'Kilo Verme'
+            : userProfile.dietaryGoal === 'muscle_gain'
+            ? 'Kas Kazanımı'
+            : 'Form Koruma'
+        }\n` +
         `🔥 Günlük Hedef Kalori: ${userProfile.targetCalories} kcal (7 Günlük Ort: ${avgCalories} kcal)\n` +
         `🥩 Hedef Protein: ${userProfile.targetProteinGrams}g | Karb: ${userProfile.targetCarbsGrams}g | Yağ: ${userProfile.targetFatGrams}g\n` +
-        `💧 Su Hedefi: ${userProfile.waterGoalMl} ml\n` +
-        `🧬 Hesaplama Motoru: ${userProfile.bmrFormulaUsed === 'mifflin_st_jeor' ? 'Mifflin-St Jeor' : 'Revised Harris-Benedict'}\n\n` +
+        `💧 Su Hedefi: ${userProfile.waterGoalMl} ml (Disiplin: ${waterDisciplineCount}/7 gün)\n` +
+        `🧬 Hesaplama Motoru: ${
+          userProfile.bmrFormulaUsed === 'mifflin_st_jeor'
+            ? 'Mifflin-St Jeor'
+            : 'Revised Harris-Benedict'
+        }\n\n` +
         `Bu rapor DietAI Mobil Uygulaması tarafından üretilmiştir.`;
 
       await Share.share({
         message: summaryText,
         title: 'DietAI Beslenme Raporu',
       });
-    } catch (err) {
+    } catch {
       Alert.alert('Bilgi', 'Rapor dışa aktarılamadı.');
     }
   };
@@ -180,17 +262,29 @@ export const AnalyticsScreen: React.FC = () => {
           <Text style={styles.kpiEmoji}>🎯</Text>
           <Text style={[styles.kpiValue, { color: theme.primary }]}>%{adherenceRate}</Text>
           <Text style={styles.kpiLabel}>Hedef Uyumu</Text>
-          <View style={[styles.kpiBadge, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5' }]}>
+          <View
+            style={[
+              styles.kpiBadge,
+              { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5' },
+            ]}
+          >
             <Text style={[styles.kpiBadgeText, { color: theme.primary }]}>Dengeli İlerleme</Text>
           </View>
         </View>
 
         <View style={styles.kpiCard}>
           <Text style={styles.kpiEmoji}>💧</Text>
-          <Text style={[styles.kpiValue, { color: theme.water }]}>6/7</Text>
+          <Text style={[styles.kpiValue, { color: theme.water }]}>{waterDisciplineCount}/7</Text>
           <Text style={styles.kpiLabel}>Su Disiplini</Text>
-          <View style={[styles.kpiBadge, { backgroundColor: isDarkMode ? 'rgba(6, 182, 212, 0.2)' : '#CFFAFE' }]}>
-            <Text style={[styles.kpiBadgeText, { color: theme.water }]}>Düzenli</Text>
+          <View
+            style={[
+              styles.kpiBadge,
+              { backgroundColor: isDarkMode ? 'rgba(6, 182, 212, 0.2)' : '#CFFAFE' },
+            ]}
+          >
+            <Text style={[styles.kpiBadgeText, { color: theme.water }]}>
+              {waterDisciplineCount >= 5 ? 'Düzenli' : 'Geliştirilmeli'}
+            </Text>
           </View>
         </View>
       </View>
@@ -201,20 +295,26 @@ export const AnalyticsScreen: React.FC = () => {
           <View>
             <Text style={styles.cardTitle}>📊 7 Günlük Kalori Dağılımı</Text>
             <Text style={styles.cardSubtitle}>
-              Seçili Gün: <Text style={styles.bold}>{selectedDay.dayLabel} ({selectedDay.dateStr})</Text> •{' '}
-              <Text style={{ color: theme.primary, fontWeight: '700' }}>{selectedDay.calories} kcal</Text>
+              Seçili Gün:{' '}
+              <Text style={styles.bold}>
+                {selectedDay.dayLabel} ({selectedDay.dateStr})
+              </Text>{' '}
+              •{' '}
+              <Text style={{ color: theme.primary, fontWeight: '700' }}>
+                {selectedDay.calories} kcal
+              </Text>
             </Text>
           </View>
         </View>
 
         {/* SVG Bar Chart with Target Threshold Line */}
         <View style={styles.chartWrapper}>
-          <Svg width={CHART_WIDTH} height={BAR_CHART_HEIGHT}>
+          <Svg width={chartWidth} height={BAR_CHART_HEIGHT}>
             {/* Target line */}
             <Line
               x1={0}
               y1={chartHeightInner * (1 - targetCal / maxCal)}
-              x2={CHART_WIDTH}
+              x2={chartWidth}
               y2={chartHeightInner * (1 - targetCal / maxCal)}
               stroke={isDarkMode ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.2)'}
               strokeDasharray="4, 4"
@@ -223,7 +323,7 @@ export const AnalyticsScreen: React.FC = () => {
 
             {/* Target reference label */}
             <SvgText
-              x={CHART_WIDTH - 65}
+              x={chartWidth - 65}
               y={chartHeightInner * (1 - targetCal / maxCal) - 4}
               fontSize={10}
               fill={theme.textMuted}
@@ -235,9 +335,9 @@ export const AnalyticsScreen: React.FC = () => {
             {/* Daily Bars */}
             {weeklyData.map((d, index) => {
               const barWidth = 26;
-              const slotWidth = CHART_WIDTH / weeklyData.length;
+              const slotWidth = chartWidth / weeklyData.length;
               const x = slotWidth * index + (slotWidth - barWidth) / 2;
-              const barHeight = Math.max(12, (d.calories / maxCal) * chartHeightInner);
+              const barHeight = Math.max(8, (d.calories / maxCal) * chartHeightInner);
               const y = chartHeightInner - barHeight;
               const isSelected = index === selectedDayIndex;
 
@@ -245,7 +345,9 @@ export const AnalyticsScreen: React.FC = () => {
               const barColor = isSelected
                 ? theme.primary
                 : isWithinTarget
-                ? isDarkMode ? '#10B981' : Colors.primary
+                ? isDarkMode
+                  ? '#10B981'
+                  : Colors.primary
                 : d.calories > targetCal
                 ? theme.calories
                 : theme.protein;
@@ -268,7 +370,13 @@ export const AnalyticsScreen: React.FC = () => {
                     y={BAR_CHART_HEIGHT - 8}
                     fontSize={11}
                     fontWeight={isSelected ? '700' : '500'}
-                    fill={isSelected ? (isDarkMode ? theme.primary : Colors.primaryDark) : theme.textSecondary}
+                    fill={
+                      isSelected
+                        ? isDarkMode
+                          ? theme.primary
+                          : Colors.primaryDark
+                        : theme.textSecondary
+                    }
                     textAnchor="middle"
                   >
                     {d.dayLabel}
@@ -311,38 +419,146 @@ export const AnalyticsScreen: React.FC = () => {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>🥗 {selectedDay.dayLabel} Günü Makro Dengesi</Text>
         <Text style={styles.cardSubtitle}>
-          Toplam: <Text style={styles.bold}>{selectedDay.calories} kcal</Text> • Alınan Makro Gramajları
+          Toplam: <Text style={styles.bold}>{selectedDay.calories} kcal</Text> • Alınan Makro
+          Gramajları
         </Text>
 
         {/* Multi-segmented Macro Ratio Bar */}
         <View style={styles.segmentedBar}>
-          <View style={[styles.segment, { flex: proteinPercent, backgroundColor: theme.protein }]} />
-          <View style={[styles.segment, { flex: carbsPercent, backgroundColor: theme.calories }]} />
+          <View
+            style={[styles.segment, { flex: proteinPercent, backgroundColor: theme.protein }]}
+          />
+          <View
+            style={[styles.segment, { flex: carbsPercent, backgroundColor: theme.calories }]}
+          />
           <View style={[styles.segment, { flex: fatPercent, backgroundColor: theme.fat }]} />
         </View>
 
         {/* Macro Details Grid */}
         <View style={styles.macroGrid}>
-          <View style={[styles.macroGridItem, { borderColor: isDarkMode ? '#1E3A8A' : '#BFDBFE' }]}>
+          <View
+            style={[styles.macroGridItem, { borderColor: isDarkMode ? '#1E3A8A' : '#BFDBFE' }]}
+          >
             <Text style={[styles.macroGridValue, { color: theme.protein }]}>
               {selectedDay.protein}g (%{proteinPercent})
             </Text>
             <Text style={styles.macroGridLabel}>🥩 Protein</Text>
           </View>
 
-          <View style={[styles.macroGridItem, { borderColor: isDarkMode ? '#78350F' : '#FDE68A' }]}>
+          <View
+            style={[styles.macroGridItem, { borderColor: isDarkMode ? '#78350F' : '#FDE68A' }]}
+          >
             <Text style={[styles.macroGridValue, { color: theme.calories }]}>
               {selectedDay.carbs}g (%{carbsPercent})
             </Text>
             <Text style={styles.macroGridLabel}>🌾 Karbonhidrat</Text>
           </View>
 
-          <View style={[styles.macroGridItem, { borderColor: isDarkMode ? '#831843' : '#FBCFE8' }]}>
+          <View
+            style={[styles.macroGridItem, { borderColor: isDarkMode ? '#831843' : '#FBCFE8' }]}
+          >
             <Text style={[styles.macroGridValue, { color: theme.fat }]}>
               {selectedDay.fat}g (%{fatPercent})
             </Text>
             <Text style={styles.macroGridLabel}>🥑 Yağ</Text>
           </View>
+        </View>
+      </View>
+
+      {/* Phase 4.1: Cal AI Before & After Visual Transformation Split Slider Card */}
+      <View style={styles.card}>
+        <View style={styles.beforeAfterHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>📸 Vücut Değişim Karşılaştırıcısı</Text>
+            <Text style={styles.cardSubtitle}>
+              Çizgiyi sağa-sola kaydırarak ilerlemenizi inceleyin
+            </Text>
+          </View>
+          <View style={styles.weightDiffBadge}>
+            <Text style={styles.weightDiffText}>
+              {weightDiff <= 0 ? `${weightDiff} kg` : `+${weightDiff} kg`}
+            </Text>
+          </View>
+        </View>
+
+        {/* Interactive Split Comparison Viewport */}
+        <View
+          style={styles.splitViewport}
+          onLayout={handleSliderLayout}
+          {...splitPanResponder.panHandlers}
+        >
+          {/* Base Full Layer: AFTER Photo (Right Side) */}
+          <Image
+            source={{ uri: afterPhoto.imageUri }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+
+          {/* Clipped Overlay Layer: BEFORE Photo (Left Side up to splitPercent%) */}
+          <View style={[styles.beforeClipContainer, { width: `${splitPercent}%` }]}>
+            <Image
+              source={{ uri: beforePhoto.imageUri }}
+              style={[
+                styles.beforeFullImage,
+                { width: sliderWidthRef.current || chartWidth },
+              ]}
+              resizeMode="cover"
+            />
+          </View>
+
+          {/* Left Badge: ÖNCESİ */}
+          <View style={styles.beforeCornerBadge}>
+            <Text style={styles.cornerBadgeTitle}>ÖNCESİ</Text>
+            <Text style={styles.cornerBadgeSub}>
+              {beforePhoto.dateStr} • {beforePhoto.weightKg} kg
+            </Text>
+          </View>
+
+          {/* Right Badge: SONRASI */}
+          <View style={styles.afterCornerBadge}>
+            <Text style={styles.cornerBadgeTitle}>SONRASI</Text>
+            <Text style={styles.cornerBadgeSub}>
+              {afterPhoto.dateStr} • {afterPhoto.weightKg} kg
+            </Text>
+          </View>
+
+          {/* Vertical Split Handle Line */}
+          <View style={[styles.splitDividerLine, { left: `${splitPercent}%` }]}>
+            <View style={styles.splitHandleCircle}>
+              <Text style={styles.splitHandleArrows}>↔</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Quick Split Position & Upload Row */}
+        <View style={styles.splitActionsRow}>
+          {[25, 50, 75].map((pct) => (
+            <TouchableOpacity
+              key={`split-${pct}`}
+              style={[
+                styles.splitQuickChip,
+                Math.abs(splitPercent - pct) < 8 && styles.splitQuickChipActive,
+              ]}
+              onPress={() => setSplitPercent(pct)}
+            >
+              <Text
+                style={[
+                  styles.splitQuickText,
+                  Math.abs(splitPercent - pct) < 8 && styles.splitQuickTextActive,
+                ]}
+              >
+                %{pct} Kıyasla
+              </Text>
+            </TouchableOpacity>
+          ))}
+
+          <TouchableOpacity
+            style={styles.uploadPhotoBtn}
+            onPress={handleAddProgressPhoto}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.uploadPhotoBtnText}>+ Fotoğraf Ekle</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -509,6 +725,142 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
     macroGridLabel: {
       ...Typography.tiny,
       color: theme.textMuted,
+    },
+    beforeAfterHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: Spacing.md,
+    },
+    weightDiffBadge: {
+      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: BorderRadius.full,
+      borderWidth: 1,
+      borderColor: theme.primary,
+    },
+    weightDiffText: {
+      ...Typography.captionBold,
+      color: isDarkMode ? theme.primary : Colors.primaryDark,
+    },
+    splitViewport: {
+      width: '100%',
+      height: 215,
+      borderRadius: BorderRadius.xl,
+      overflow: 'hidden',
+      position: 'relative',
+      backgroundColor: '#0F172A',
+      borderWidth: 1.5,
+      borderColor: theme.border,
+    },
+    beforeClipContainer: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      bottom: 0,
+      overflow: 'hidden',
+    },
+    beforeFullImage: {
+      height: 215,
+    },
+    beforeCornerBadge: {
+      position: 'absolute',
+      bottom: 10,
+      left: 10,
+      backgroundColor: 'rgba(15, 23, 42, 0.82)',
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: BorderRadius.md,
+    },
+    afterCornerBadge: {
+      position: 'absolute',
+      bottom: 10,
+      right: 10,
+      backgroundColor: 'rgba(16, 185, 129, 0.9)',
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: BorderRadius.md,
+    },
+    cornerBadgeTitle: {
+      ...Typography.tiny,
+      fontSize: 9,
+      color: '#FFFFFF',
+      fontWeight: '800',
+      letterSpacing: 0.6,
+    },
+    cornerBadgeSub: {
+      ...Typography.tiny,
+      fontSize: 10,
+      color: '#FFFFFF',
+      fontWeight: '600',
+    },
+    splitDividerLine: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      width: 3,
+      backgroundColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: -1.5,
+    },
+    splitHandleCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: Colors.primary,
+      borderWidth: 2,
+      borderColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...Shadows.card,
+    },
+    splitHandleArrows: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    splitActionsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: Spacing.md,
+    },
+    splitQuickChip: {
+      paddingVertical: 6,
+      paddingHorizontal: 8,
+      borderRadius: BorderRadius.md,
+      backgroundColor: theme.surfaceSubtle,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    splitQuickChipActive: {
+      borderColor: theme.primary,
+      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
+    },
+    splitQuickText: {
+      ...Typography.tiny,
+      fontSize: 10,
+      color: theme.textSecondary,
+      fontWeight: '600',
+    },
+    splitQuickTextActive: {
+      color: isDarkMode ? theme.primary : Colors.primaryDark,
+      fontWeight: '700',
+    },
+    uploadPhotoBtn: {
+      flex: 1,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: BorderRadius.md,
+      backgroundColor: theme.primary,
+      alignItems: 'center',
+    },
+    uploadPhotoBtnText: {
+      ...Typography.tiny,
+      color: '#FFFFFF',
+      fontWeight: '700',
     },
     aiInsightCard: {
       backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.08)' : '#ECFDF5',

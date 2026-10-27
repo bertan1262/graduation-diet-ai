@@ -10,7 +10,10 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "DietAI uses the camera to recognize food items and estimate portion sizes.",
-        "NSPhotoLibraryUsageDescription": "DietAI accesses photos to analyze meals from your library."
+        "NSPhotoLibraryUsageDescription": "DietAI accesses photos to analyze meals from your library.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        }
       }
     },
     "android": {
@@ -21,9 +24,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "CAMERA"
       ]
     },
     "plugins": [
@@ -32,7 +33,8 @@
         {
           "cameraPermission": "Allow DietAI to access your camera for food recognition."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

@@ -68,7 +68,14 @@ export const Typography: Record<string, TextStyle> = {
   },
 };
 
-export const Shadows: Record<string, ViewStyle> = {
+export const Shadows: Record<'subtle' | 'soft' | 'card' | 'floating' | 'glow', ViewStyle> = {
+  subtle: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
   soft: {
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
@@ -89,5 +96,12 @@ export const Shadows: Record<string, ViewStyle> = {
     shadowOpacity: 0.1,
     shadowRadius: 16,
     elevation: 6,
+  },
+  glow: {
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
   },
 };

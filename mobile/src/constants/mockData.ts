@@ -1,4 +1,11 @@
-import { UserProfile, LoggedMealItem, FoodItemDetection } from '../types';
+import {
+  UserProfile,
+  LoggedMealItem,
+  FoodItemDetection,
+  CustomRecipe,
+  ProgressPhotoEntry,
+  WeeklyWeightEntry,
+} from '../types';
 
 export const DEFAULT_USER_PROFILE: UserProfile = {
   name: 'Bertan Beyal',
@@ -26,6 +33,13 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
   bmrFormulaUsed: 'revised_harris_benedict',
   idealWeightKg: 68.0,
   bmi: 23.46,
+  weeklyPaceKg: 0.5,
+  dailyMealsCount: 3,
+  firstMealTime: '09:00',
+  lastMealTime: '19:00',
+  weekendFlexibility: true,
+  dietType: 'balanced',
+  mainObstacles: ['Gece geç saatlerde atıştırmak'],
 };
 
 export const INITIAL_TODAY_MEALS: LoggedMealItem[] = [
@@ -38,6 +52,11 @@ export const INITIAL_TODAY_MEALS: LoggedMealItem[] = [
     proteinGrams: 13.0,
     carbsGrams: 1.1,
     fatGrams: 10.6,
+    fiberGrams: 0.0,
+    sugarGrams: 0.6,
+    sodiumMg: 124,
+    servingUnit: 'piece',
+    servingCount: 2,
     loggedAt: '08:30',
     allergens: ['Yumurta'],
   },
@@ -50,6 +69,11 @@ export const INITIAL_TODAY_MEALS: LoggedMealItem[] = [
     proteinGrams: 8.5,
     carbsGrams: 36.4,
     fatGrams: 4.2,
+    fiberGrams: 5.4,
+    sugarGrams: 4.8,
+    sodiumMg: 95,
+    servingUnit: 'bowl',
+    servingCount: 1,
     loggedAt: '08:45',
     allergens: ['Gluten', 'Laktoz'],
   },
@@ -62,6 +86,11 @@ export const INITIAL_TODAY_MEALS: LoggedMealItem[] = [
     proteinGrams: 55.8,
     carbsGrams: 0.0,
     fatGrams: 6.5,
+    fiberGrams: 0.0,
+    sugarGrams: 0.0,
+    sodiumMg: 340,
+    servingUnit: 'portion',
+    servingCount: 1,
     loggedAt: '12:45',
   },
   {
@@ -73,6 +102,11 @@ export const INITIAL_TODAY_MEALS: LoggedMealItem[] = [
     proteinGrams: 5.2,
     carbsGrams: 28.4,
     fatGrams: 6.1,
+    fiberGrams: 4.8,
+    sugarGrams: 2.4,
+    sodiumMg: 210,
+    servingUnit: 'bowl',
+    servingCount: 1,
     loggedAt: '13:00',
   },
 ];
@@ -88,5 +122,100 @@ export const MOCK_DETECTED_MEAL: FoodItemDetection = {
     carbsGrams: 28.0,
     fatGrams: 9.2,
     fiberGrams: 4.5,
+    sugarGrams: 2.1,
+    sodiumMg: 380,
   },
 };
+
+export const INITIAL_CUSTOM_RECIPES: CustomRecipe[] = [
+  {
+    id: 'recipe-1',
+    title: 'Fit Anne Köftesi & Sebze',
+    servings: 2,
+    ingredients: [
+      {
+        id: 'ing-1',
+        name: 'Yağsız Dana Kıyma',
+        grams: 200,
+        calories: 350,
+        proteinGrams: 44,
+        carbsGrams: 0,
+        fatGrams: 18,
+        fiberGrams: 0,
+      },
+      {
+        id: 'ing-2',
+        name: 'Yulaf Kepeği & Baharat',
+        grams: 40,
+        calories: 140,
+        proteinGrams: 6,
+        carbsGrams: 24,
+        fatGrams: 2.5,
+        fiberGrams: 6,
+      },
+      {
+        id: 'ing-3',
+        name: 'Fırın Kabak & Kapya Biber',
+        grams: 160,
+        calories: 50,
+        proteinGrams: 2,
+        carbsGrams: 10,
+        fatGrams: 0.5,
+        fiberGrams: 3.5,
+      },
+    ],
+    totalCalories: 540,
+    totalProteinGrams: 52,
+    totalCarbsGrams: 34,
+    totalFatGrams: 21,
+    totalFiberGrams: 9.5,
+    totalGrams: 400,
+  },
+];
+
+export const INITIAL_PROGRESS_PHOTOS: ProgressPhotoEntry[] = [
+  {
+    id: 'prog-before',
+    dateStr: '15 Eyl 2026',
+    weightKg: 79.4,
+    imageUri: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=600&q=80',
+    label: 'Başlangıç (1. Gün)',
+  },
+  {
+    id: 'prog-after',
+    dateStr: 'Bugün',
+    weightKg: 76.0,
+    imageUri: 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80',
+    label: 'Güncel Durum (6. Hafta)',
+  },
+];
+
+export const INITIAL_WEEKLY_WEIGHT_LOGS: WeeklyWeightEntry[] = [
+  {
+    id: 'ww-1',
+    dateStr: '9 Eki',
+    weekLabel: '2 Hafta Önce',
+    weightKg: 65.8,
+    previousWeightKg: 66.2,
+    deltaKg: -0.4,
+    goalAtLog: 'weight_loss',
+  },
+  {
+    id: 'ww-2',
+    dateStr: '16 Eki',
+    weekLabel: 'Geçen Hafta',
+    weightKg: 65.4,
+    previousWeightKg: 65.8,
+    deltaKg: -0.4,
+    goalAtLog: 'muscle_gain',
+  },
+  {
+    id: 'ww-3',
+    dateStr: '23 Eki',
+    weekLabel: 'Bu Hafta',
+    weightKg: 65.0,
+    previousWeightKg: 65.4,
+    deltaKg: -0.4,
+    goalAtLog: 'muscle_gain',
+  },
+];

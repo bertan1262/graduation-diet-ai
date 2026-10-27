@@ -1,9 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, Animated } from 'react-native';
-import { Colors } from '../../constants/colors';
+import { Colors, getThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
+import { useDietStore } from '../../store/useDietStore';
 
 export const TypingIndicator: React.FC = () => {
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const theme = getThemeColors(isDarkMode);
+
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
   const dot3 = useRef(new Animated.Value(0)).current;
@@ -37,21 +41,37 @@ export const TypingIndicator: React.FC = () => {
     return () => {
       loopAnim.stop();
     };
-  }, []);
+  }, [dot1, dot2, dot3]);
 
   return (
     <View style={styles.container}>
       {/* Assistant Header */}
       <View style={styles.assistantHeader}>
-        <View style={styles.avatarCircle}>
+        <View
+          style={[
+            styles.avatarCircle,
+            {
+              backgroundColor: isDarkMode ? '#1E293B' : Colors.primaryMuted,
+              borderColor: isDarkMode ? '#334155' : Colors.primaryLight,
+            },
+          ]}
+        >
           <Text style={styles.avatarEmoji}>🤖</Text>
         </View>
-        <Text style={styles.assistantName}>DietAI Diyetisyeni</Text>
+        <Text style={[styles.assistantName, { color: theme.textSecondary }]}>DietAI Diyetisyeni</Text>
         <View style={styles.activeDot} />
       </View>
 
       {/* Typing Bubble with 3 Bouncing Emerald Dots */}
-      <View style={styles.bubble}>
+      <View
+        style={[
+          styles.bubble,
+          {
+            backgroundColor: theme.surface,
+            borderColor: theme.border,
+          },
+        ]}
+      >
         <View style={styles.dotsRow}>
           <Animated.View
             style={[
@@ -72,7 +92,7 @@ export const TypingIndicator: React.FC = () => {
             ]}
           />
         </View>
-        <Text style={styles.typingLabel}>Yanıt hazırlanıyor...</Text>
+        <Text style={[styles.typingLabel, { color: theme.textMuted }]}>Yanıt hazırlanıyor...</Text>
       </View>
     </View>
   );

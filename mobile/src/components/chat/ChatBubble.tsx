@@ -24,10 +24,20 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
       {/* Assistant Header with AI Avatar */}
       {!isUser && (
         <View style={styles.assistantHeader}>
-          <View style={[styles.avatarCircle, { backgroundColor: isDarkMode ? '#1E293B' : Colors.primaryMuted, borderColor: isDarkMode ? '#334155' : Colors.primaryLight }]}>
+          <View
+            style={[
+              styles.avatarCircle,
+              {
+                backgroundColor: isDarkMode ? '#1E293B' : Colors.primaryMuted,
+                borderColor: isDarkMode ? '#334155' : Colors.primaryLight,
+              },
+            ]}
+          >
             <Text style={styles.avatarEmoji}>🤖</Text>
           </View>
-          <Text style={[styles.assistantName, { color: theme.textSecondary }]}>DietAI Diyetisyeni</Text>
+          <Text style={[styles.assistantName, { color: theme.textSecondary }]}>
+            DietAI Diyetisyeni
+          </Text>
           <View style={styles.verifiedDot} />
         </View>
       )}

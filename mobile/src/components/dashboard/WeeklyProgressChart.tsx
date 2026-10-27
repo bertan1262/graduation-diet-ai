@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, useWindowDimensions } from 'react-native';
 import Svg, {
   Path,
   Circle,
@@ -15,11 +15,10 @@ import { useDietStore } from '../../store/useDietStore';
 
 type MetricType = 'calories' | 'weight';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CHART_WIDTH = SCREEN_WIDTH - Spacing.lg * 2 - Spacing.xl * 2;
-const CHART_HEIGHT = 160;
-const PADDING_TOP = 25;
-const PADDING_BOTTOM = 25;
+const CHART_HEIGHT = 165;
+const PADDING_TOP = 28;
+const PADDING_BOTTOM = 24;
+const PADDING_X = 24;
 
 interface DayDataPoint {
   day: string;
@@ -27,34 +26,62 @@ interface DayDataPoint {
   weight: number;
 }
 
-const WEEKLY_DATA: DayDataPoint[] = [
-  { day: 'Pzt', calories: 1980, weight: 76.5 },
-  { day: 'Sal', calories: 2120, weight: 76.3 },
-  { day: 'Çar', calories: 2050, weight: 76.2 },
-  { day: 'Per', calories: 1920, weight: 76.0 },
-  { day: 'Cum', calories: 2180, weight: 75.9 },
-  { day: 'Cmt', calories: 2080, weight: 75.8 },
-  { day: 'Bugün', calories: 2040, weight: 75.6 },
-];
-
 export const WeeklyProgressChart: React.FC = () => {
-  const { userProfile, isDarkMode } = useDietStore();
+  const { userProfile, todayMeals, isDarkMode } = useDietStore();
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = Math.max(240, screenWidth - Spacing.lg * 2 - Spacing.xl * 2 - 4);
+
   const theme = getThemeColors(isDarkMode);
-  const styles = useMemo(() => createStyles(theme, isDarkMode), [isDarkMode]);
+  const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
   const [metric, setMetric] = useState<MetricType>('calories');
 
   const targetCal = userProfile.targetCalories || 2100;
-  const targetWeight = userProfile.targetWeightKg || 72;
+  const curWeight = userProfile.weightKg || 75.6;
+  const targetWeight =
+    userProfile.targetWeightKg ||
+    (userProfile.dietaryGoal === 'muscle_gain'
+      ? parseFloat((curWeight + 3).toFixed(1))
+      : userProfile.dietaryGoal === 'maintenance'
+      ? curWeight
+      : parseFloat((curWeight - 3).toFixed(1)));
+
+  const weeklyData: DayDataPoint[] = useMemo(() => {
+    const todayCalories = todayMeals.reduce((acc, m) => acc + m.calories, 0);
+    const curW = userProfile.weightKg || 75.6;
+    const goal = userProfile.dietaryGoal;
+
+    // Offsets relative to today's real profile weight based on dietary goal
+    const offsets =
+      goal === 'muscle_gain'
+        ? [-0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0]
+        : goal === 'maintenance'
+        ? [0.1, 0.0, -0.1, 0.1, 0.0, -0.1, 0]
+        : [0.9, 0.7, 0.6, 0.4, 0.3, 0.2, 0];
+
+    return [
+      { day: 'Pzt', calories: 1980, weight: parseFloat((curW + offsets[0]).toFixed(1)) },
+      { day: 'Sal', calories: 2120, weight: parseFloat((curW + offsets[1]).toFixed(1)) },
+      { day: 'Çar', calories: 2050, weight: parseFloat((curW + offsets[2]).toFixed(1)) },
+      { day: 'Per', calories: 1920, weight: parseFloat((curW + offsets[3]).toFixed(1)) },
+      { day: 'Cum', calories: 2180, weight: parseFloat((curW + offsets[4]).toFixed(1)) },
+      { day: 'Cmt', calories: 2080, weight: parseFloat((curW + offsets[5]).toFixed(1)) },
+      { day: 'Bugün', calories: todayCalories, weight: parseFloat((curW + offsets[6]).toFixed(1)) },
+    ];
+  }, [todayMeals, userProfile.weightKg, userProfile.dietaryGoal]);
 
   // Extract values based on active metric
-  const values = metric === 'calories'
-    ? WEEKLY_DATA.map((d) => d.calories)
-    : WEEKLY_DATA.map((d) => d.weight);
+  const values =
+    metric === 'calories'
+      ? weeklyData.map((d) => d.calories)
+      : weeklyData.map((d) => d.weight);
 
   const targetVal = metric === 'calories' ? targetCal : targetWeight;
 
-  const minVal = Math.min(...values, targetVal) * 0.96;
-  const maxVal = Math.max(...values, targetVal) * 1.04;
+  const rawMin = Math.min(...values, targetVal);
+  const rawMax = Math.max(...values, targetVal);
+  const spread = Math.max(rawMax - rawMin, metric === 'calories' ? 300 : 1.5);
+  const minVal = rawMin - spread * 0.22;
+  const maxVal = rawMax + spread * 0.25;
 
   const getY = (val: number) => {
     if (maxVal === minVal) return CHART_HEIGHT / 2;
@@ -66,7 +93,8 @@ export const WeeklyProgressChart: React.FC = () => {
   };
 
   const getX = (index: number) => {
-    return (index / (WEEKLY_DATA.length - 1)) * CHART_WIDTH;
+    const innerWidth = Math.max(100, chartWidth - PADDING_X * 2);
+    return PADDING_X + (index / (weeklyData.length - 1)) * innerWidth;
   };
 
   const points = values.map((val, i) => ({
@@ -87,7 +115,9 @@ export const WeeklyProgressChart: React.FC = () => {
   }, '');
 
   // Closed area under the curve for gradient fill
-  const areaPath = `${linePath} L ${CHART_WIDTH} ${CHART_HEIGHT} L 0 ${CHART_HEIGHT} Z`;
+  const firstX = points[0]?.x ?? PADDING_X;
+  const lastX = points[points.length - 1]?.x ?? chartWidth - PADDING_X;
+  const areaPath = `${linePath} L ${lastX} ${CHART_HEIGHT} L ${firstX} ${CHART_HEIGHT} Z`;
 
   // Target guideline Y position
   const targetY = getY(targetVal);
@@ -136,7 +166,7 @@ export const WeeklyProgressChart: React.FC = () => {
 
       {/* SVG Canvas Area */}
       <View style={styles.chartWrapper}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+        <Svg width={chartWidth} height={CHART_HEIGHT}>
           <Defs>
             <LinearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
               <Stop
@@ -156,17 +186,17 @@ export const WeeklyProgressChart: React.FC = () => {
           {targetY >= 0 && targetY <= CHART_HEIGHT && (
             <>
               <Line
-                x1={0}
+                x1={PADDING_X - 8}
                 y1={targetY}
-                x2={CHART_WIDTH}
+                x2={chartWidth - PADDING_X + 8}
                 y2={targetY}
                 stroke={isDarkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(15, 23, 42, 0.2)'}
                 strokeWidth={1}
                 strokeDasharray="4 4"
               />
               <SvgText
-                x={CHART_WIDTH - 6}
-                y={targetY - 5}
+                x={chartWidth - PADDING_X}
+                y={targetY < 20 ? targetY + 13 : targetY - 6}
                 fontSize={9}
                 fill={theme.textMuted}
                 textAnchor="end"
@@ -192,6 +222,8 @@ export const WeeklyProgressChart: React.FC = () => {
           {/* Data Points / Nodes */}
           {points.map((pt, i) => {
             const isToday = i === points.length - 1;
+            const anchor = i === 0 ? 'start' : isToday ? 'end' : 'middle';
+            const labelX = i === 0 ? pt.x - 4 : isToday ? pt.x + 4 : pt.x;
             return (
               <React.Fragment key={`pt-${i}`}>
                 {/* Node circle */}
@@ -207,14 +239,14 @@ export const WeeklyProgressChart: React.FC = () => {
                 {/* Value on peak nodes */}
                 {(i === 0 || i === 3 || isToday) && (
                   <SvgText
-                    x={pt.x}
+                    x={labelX}
                     y={pt.y - 10}
                     fontSize={10}
                     fontWeight="700"
                     fill={theme.textPrimary}
-                    textAnchor="middle"
+                    textAnchor={anchor}
                   >
-                    {metric === 'calories' ? pt.val : `${pt.val}k`}
+                    {metric === 'calories' ? pt.val : `${pt.val} kg`}
                   </SvgText>
                 )}
               </React.Fragment>
@@ -225,12 +257,12 @@ export const WeeklyProgressChart: React.FC = () => {
 
       {/* Weekday Axis Labels */}
       <View style={styles.axisLabelsRow}>
-        {WEEKLY_DATA.map((d, i) => (
+        {weeklyData.map((d, i) => (
           <Text
             key={d.day}
             style={[
               styles.axisLabel,
-              i === WEEKLY_DATA.length - 1 && styles.axisLabelToday,
+              i === weeklyData.length - 1 && styles.axisLabelToday,
             ]}
           >
             {d.day}
@@ -243,6 +275,10 @@ export const WeeklyProgressChart: React.FC = () => {
         <Text style={styles.insightText}>
           {metric === 'calories'
             ? '🔥 7 günün 5 gününde kalori hedefinizi tutturdunuz! Dengeli beslenme disiplini harika gidiyor.'
+            : userProfile.dietaryGoal === 'muscle_gain'
+            ? '💪 Kilonuz haftalık +0.3 kg temiz kas kazanımı ritminde ilerliyor. Pozitif kalori dengesi korunuyor.'
+            : userProfile.dietaryGoal === 'maintenance'
+            ? '⚖️ Kilonuz haftalık koruma bandında (±0.1 kg) dengeli seyrediyor. Form koruma hedefinize tam uyum sağlıyorsunuz.'
             : '🎯 Kilonuz haftalık -0.3 kg sağlıklı ritimde ilerliyor. Kas kaybı olmadan yağ yakımı sürüyor.'}
         </Text>
       </View>

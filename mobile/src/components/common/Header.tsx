@@ -19,8 +19,18 @@ export const Header: React.FC<HeaderProps> = ({
   onAvatarPress,
   rightAction,
 }) => {
-  const { isDarkMode, toggleDarkMode } = useDietStore();
+  const { userProfile, isDarkMode, toggleDarkMode } = useDietStore();
   const theme = getThemeColors(isDarkMode);
+
+  const initials =
+    (userProfile?.name || 'Diet AI')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'DA';
 
   // Format current date in Turkish if no custom subtitle provided
   const formattedDate = subtitle || new Intl.DateTimeFormat('tr-TR', {
@@ -67,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
                 activeOpacity={0.8}
               >
                 <Text style={[styles.avatarText, { color: isDarkMode ? theme.primary : Colors.primaryDark }]}>
-                  BB
+                  {initials}
                 </Text>
               </TouchableOpacity>
             )}

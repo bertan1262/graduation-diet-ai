@@ -1,11 +1,15 @@
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
+export type ServingUnitType = 'g' | 'portion' | 'piece' | 'slice' | 'bowl';
+
 export interface NutritionalInfo {
   calories: number;
   proteinGrams: number;
   carbsGrams: number;
   fatGrams: number;
   fiberGrams?: number;
+  sugarGrams?: number;
+  sodiumMg?: number;
 }
 
 export interface FoodItemDetection {
@@ -15,6 +19,7 @@ export interface FoodItemDetection {
   confidenceScore: number;
   nutrition: NutritionalInfo;
   allergens?: string[];
+  pinPosition?: { topPercent: number; leftPercent: number };
 }
 
 export interface RecognitionResponse {
@@ -33,10 +38,79 @@ export interface LoggedMealItem {
   proteinGrams: number;
   carbsGrams: number;
   fatGrams: number;
+  fiberGrams?: number;
+  sugarGrams?: number;
+  sodiumMg?: number;
+  servingUnit?: ServingUnitType;
+  servingCount?: number;
   loggedAt: string; // ISO string or time "12:30"
   imageUrl?: string;
   allergens?: string[];
   warningMessage?: string;
+}
+
+export interface SuggestedMealAction {
+  name: string;
+  portionGrams: number;
+  mealType: MealType;
+  calories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
+  fiberGrams?: number;
+  sugarGrams?: number;
+  sodiumMg?: number;
+}
+
+export interface PendingMealAnalysis {
+  status: 'idle' | 'analyzing' | 'ready' | 'error';
+  imageUri?: string;
+  startedAt?: number;
+  detectedFood?: FoodItemDetection;
+  detectedFoods?: FoodItemDetection[];
+}
+
+export interface CustomRecipeIngredient {
+  id: string;
+  name: string;
+  grams: number;
+  calories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
+  fiberGrams?: number;
+}
+
+export interface CustomRecipe {
+  id: string;
+  title: string;
+  servings: number;
+  ingredients: CustomRecipeIngredient[];
+  totalCalories: number;
+  totalProteinGrams: number;
+  totalCarbsGrams: number;
+  totalFatGrams: number;
+  totalFiberGrams: number;
+  totalGrams: number;
+}
+
+export interface ProgressPhotoEntry {
+  id: string;
+  dateStr: string;
+  weightKg: number;
+  imageUri: string;
+  label: string;
+}
+
+export interface WeeklyWeightEntry {
+  id: string;
+  dateStr: string;
+  weekLabel: string;
+  weightKg: number;
+  previousWeightKg: number;
+  deltaKg: number;
+  goalAtLog: DietaryGoal;
+  caloriesAdjustedTo?: number;
 }
 
 export interface DailyAnalyticsRecord {
@@ -117,6 +191,14 @@ export interface UserProfile {
   bmrFormulaUsed?: string;
   idealWeightKg?: number;
   bmi?: number;
+  // Cal AI & Calz Onboarding Wizard additions
+  weeklyPaceKg?: number;
+  dailyMealsCount?: number;
+  firstMealTime?: string;
+  lastMealTime?: string;
+  weekendFlexibility?: boolean;
+  dietType?: string;
+  mainObstacles?: string[];
 }
 
 export interface ChatMessage {
@@ -125,6 +207,8 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   isMedicalWarning?: boolean;
+  safety_flag_triggered?: boolean;
+  suggestedMeal?: SuggestedMealAction;
 }
 
 export interface MealPlanDay {

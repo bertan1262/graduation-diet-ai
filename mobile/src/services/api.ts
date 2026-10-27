@@ -6,10 +6,62 @@ import {
   BMRCalculationResponse,
 } from '../types';
 import { useDietStore } from '../store/useDietStore';
+import { secureStorage } from './secureStorage';
 
-const getApiBaseUrl = (): string => {
-  return process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+const DEFAULT_DEV_API_URL = 'http://localhost:8000/api/v1';
+const DEFAULT_PROD_API_URL = 'https://api.dietai.app/api/v1';
+
+/**
+ * Resolves the API Base URL and strictly enforces HTTPS in production builds (!__DEV__).
+ * In development (__DEV__), local HTTP URLs (localhost / 192.168.x.x) are permitted for LAN testing.
+ */
+export const resolveApiBaseUrl = (): string => {
+  const isDevEnv = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
+  const rawEnvUrl = (
+    process.env.EXPO_PUBLIC_API_URL ||
+    process.env.EXPO_PUBLIC_API_BASE_URL ||
+    ''
+  ).trim();
+
+  if (!rawEnvUrl) {
+    return isDevEnv ? DEFAULT_DEV_API_URL : DEFAULT_PROD_API_URL;
+  }
+
+  // Strip trailing slash for consistent endpoint concatenation
+  const normalizedUrl = rawEnvUrl.replace(/\/+$/, '');
+
+  if (!isDevEnv && normalizedUrl.startsWith('http://')) {
+    const isLoopback =
+      normalizedUrl.startsWith('http://localhost') ||
+      normalizedUrl.startsWith('http://127.0.0.1');
+    if (!isLoopback) {
+      console.warn(
+        '[Security] Insecure HTTP API URL detected in production build. Automatically enforcing HTTPS.'
+      );
+      return normalizedUrl.replace(/^http:\/\//i, 'https://');
+    }
+  }
+
+  return normalizedUrl;
 };
+
+/**
+ * Builds request headers and automatically attaches `Authorization: Bearer <token>`
+ * from hardware-backed `expo-secure-store` when a session token is present.
+ */
+async function buildRequestHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  };
+
+  const token = await secureStorage.getAuthToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+}
 
 const isMockEnabled = (): boolean => {
   try {
@@ -23,13 +75,39 @@ const isMockEnabled = (): boolean => {
   return process.env.EXPO_PUBLIC_USE_MOCK_DATA !== 'false';
 };
 
-// Network timeout helper to prevent hanging requests on mobile networks
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 8000): Promise<Response> {
+const MEDICAL_GUARDRAIL_KEYWORDS = [
+  'ilaç',
+  'tedavi',
+  'hastalık',
+  'ağrı',
+  'reçete',
+  'tansiyon',
+  'diyabet',
+  'teşhis',
+  'antibiyotik',
+  'kanser',
+  'guatr',
+];
+
+export function isMedicalQuery(text: string): boolean {
+  const lower = text.toLowerCase();
+  return MEDICAL_GUARDRAIL_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+// Network timeout helper with automatic 401 token cleanup
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs = 8000
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timer);
+    if (res.status === 401) {
+      await secureStorage.clearAuthToken();
+    }
     return res;
   } catch (error) {
     clearTimeout(timer);
@@ -72,18 +150,36 @@ const MOCK_RECOGNITION: RecognitionResponse = {
     carbsGrams: 28.4,
     fatGrams: 12.6,
   },
-  disclaimer: 'Porsiyon ve kalori tahminleri yapay zekâ modelince yapılmıştır; tıbbi tanı veya reçete yerine geçmez.',
+  disclaimer:
+    'Porsiyon ve kalori tahminleri yapay zekâ modelince yapılmıştır; tıbbi tanı veya reçete yerine geçmez.',
 };
 
 export const apiService = {
   /**
-   * Returns current effective API configuration
+   * Returns current effective API & security configuration
    */
   getConfig() {
+    const baseUrl = resolveApiBaseUrl();
     return {
-      baseUrl: getApiBaseUrl(),
+      baseUrl,
+      isHttps: baseUrl.startsWith('https://'),
       isMock: isMockEnabled(),
+      isSecureStoreActive: secureStorage.isHardwareEncrypted(),
     };
+  },
+
+  /**
+   * Persist or clear JWT tokens in hardware-backed Expo SecureStore
+   */
+  async setSessionTokens(accessToken: string, refreshToken?: string): Promise<void> {
+    await secureStorage.setAuthToken(accessToken);
+    if (refreshToken) {
+      await secureStorage.setRefreshToken(refreshToken);
+    }
+  },
+
+  async clearSessionTokens(): Promise<void> {
+    await secureStorage.clearAuthToken();
   },
 
   /**
@@ -91,18 +187,18 @@ export const apiService = {
    */
   async analyzeFoodImage(imageBase64: string): Promise<RecognitionResponse> {
     if (isMockEnabled()) {
-      // Simulate realistic AI inference latency
       await new Promise((r) => setTimeout(r, 1200));
       return MOCK_RECOGNITION;
     }
 
     try {
-      const baseUrl = getApiBaseUrl();
+      const baseUrl = resolveApiBaseUrl();
+      const headers = await buildRequestHeaders();
       const response = await fetchWithTimeout(
         `${baseUrl}/nutrition/analyze-photo`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ image_base64: imageBase64 }),
         },
         10000
@@ -122,8 +218,21 @@ export const apiService = {
    * Send message to the dietary assistant chatbot with medical guardrail
    */
   async sendChatMessage(messageText: string): Promise<ChatMessage> {
+    const medicalTriggered = isMedicalQuery(messageText);
+
     if (isMockEnabled()) {
       await new Promise((r) => setTimeout(r, 800));
+      if (medicalTriggered) {
+        return {
+          id: `msg-${Date.now()}`,
+          sender: 'assistant',
+          content:
+            'Sağlığınız her şeyden önemlidir. DietAI genel beslenme ve kalori rehberliği sunar; tıbbi tanı koyamaz ve ilaç tedavisi öneremez. Lütfen bu durumu mutlaka hekiminize veya uzman bir klinik diyetisyene danışınız.',
+          timestamp: new Date().toISOString(),
+          isMedicalWarning: true,
+          safety_flag_triggered: true,
+        };
+      }
       return {
         id: `msg-${Date.now()}`,
         sender: 'assistant',
@@ -133,12 +242,13 @@ export const apiService = {
     }
 
     try {
-      const baseUrl = getApiBaseUrl();
+      const baseUrl = resolveApiBaseUrl();
+      const headers = await buildRequestHeaders();
       const response = await fetchWithTimeout(
         `${baseUrl}/chat/message`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ message: messageText }),
         },
         8000
@@ -147,9 +257,28 @@ export const apiService = {
       if (!response.ok) {
         throw new Error(`Chat API error: ${response.status}`);
       }
-      return await response.json();
+      const data: ChatMessage = await response.json();
+      const isWarning = Boolean(
+        data.isMedicalWarning || data.safety_flag_triggered || medicalTriggered
+      );
+      return {
+        ...data,
+        isMedicalWarning: isWarning,
+        safety_flag_triggered: isWarning,
+      };
     } catch (err) {
       console.warn('Chat API failed, falling back to offline guardrail response:', err);
+      if (medicalTriggered) {
+        return {
+          id: `msg-${Date.now()}`,
+          sender: 'assistant',
+          content:
+            'Sağlığınız her şeyden önemlidir. DietAI genel beslenme ve kalori rehberliği sunar; tıbbi tanı koyamaz ve ilaç tedavisi öneremez. Lütfen bu durumu mutlaka hekiminize veya uzman bir klinik diyetisyene danışınız.',
+          timestamp: new Date().toISOString(),
+          isMedicalWarning: true,
+          safety_flag_triggered: true,
+        };
+      }
       return {
         id: `msg-${Date.now()}`,
         sender: 'assistant',
@@ -165,12 +294,13 @@ export const apiService = {
   async getMealPlan(): Promise<MealPlanDay[]> {
     if (!isMockEnabled()) {
       try {
-        const baseUrl = getApiBaseUrl();
+        const baseUrl = resolveApiBaseUrl();
+        const headers = await buildRequestHeaders();
         const response = await fetchWithTimeout(
           `${baseUrl}/nutrition/meal-plan`,
           {
             method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
           },
           5000
         );
@@ -209,12 +339,13 @@ export const apiService = {
   async calculateBMR(payload: BMRCalculationRequest): Promise<BMRCalculationResponse> {
     if (!isMockEnabled()) {
       try {
-        const baseUrl = getApiBaseUrl();
+        const baseUrl = resolveApiBaseUrl();
+        const headers = await buildRequestHeaders();
         const response = await fetchWithTimeout(
           `${baseUrl}/nutrition/calculate-bmr`,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(payload),
           },
           6000

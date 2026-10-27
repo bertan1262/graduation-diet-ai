@@ -30,6 +30,7 @@ export interface DayPlan {
   dayName: string;
   dayShort: string;
   dayOfMonth: number;
+  monthName: string;
   isToday: boolean;
   breakfast: MealRecipe;
   lunch: MealRecipe;
@@ -406,6 +407,8 @@ export function generatePersonalizedWeekPlan(
       targetDate.getMonth() === now.getMonth() &&
       targetDate.getFullYear() === now.getFullYear();
 
+    const monthName = new Intl.DateTimeFormat('tr-TR', { month: 'long' }).format(targetDate);
+
     const getSafeMeal = (type: MealType, offset: number) => {
       const allForType = ALTERNATIVE_MEALS[type];
       const safe = allForType.filter((m) => isMealSafeForProfile(m, allergies, goal));
@@ -418,6 +421,7 @@ export function generatePersonalizedWeekPlan(
       dayName: template.dayName,
       dayShort: template.dayShort,
       dayOfMonth: targetDate.getDate(),
+      monthName,
       isToday,
       breakfast: getSafeMeal('breakfast', 0),
       lunch: getSafeMeal('lunch', 1),
@@ -609,7 +613,7 @@ export const MealPlanScreen: React.FC = () => {
           <View style={[styles.goalPill, { backgroundColor: theme.surfaceSubtle }]}>
             <Text style={[styles.goalPillText, { color: theme.textSecondary }]}>
               {userProfile.dietaryGoal === 'weight_loss'
-                ? '🔥 Yağ Yakımı (-500 kcal)'
+                ? '🔥 Yağ Yakımı (-400 kcal)'
                 : userProfile.dietaryGoal === 'muscle_gain'
                 ? '💪 Kas Kazanımı (+300 kcal)'
                 : '⚖️ Denge & Koruma'}
@@ -706,7 +710,7 @@ export const MealPlanScreen: React.FC = () => {
         <View style={styles.telemetryRow}>
           <View>
             <Text style={[styles.telemetryDayTitle, { color: theme.textPrimary }]}>
-              {activeDay.dayName} ({activeDay.dayOfMonth} Ekim) Planı
+              {activeDay.dayName} ({activeDay.dayOfMonth} {activeDay.monthName}) Planı
             </Text>
             <Text style={[styles.telemetrySub, { color: theme.textMuted }]}>
               Hedef: {userProfile.targetCalories} kcal • Plan: {totalPlannedCalories} kcal

@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
@@ -44,15 +44,23 @@ export const MacroItem: React.FC<MacroItemProps> = ({
         <View style={styles.valueGroup}>
           <Text style={styles.currentValue}>
             {currentGrams}
-            <Text style={styles.targetValue}> / {targetGrams}{unit}</Text>
+            <Text style={styles.targetValue}>
+              {' '}
+              / {targetGrams}
+              {unit}
+            </Text>
           </Text>
           <View
             style={[
               styles.percentBadge,
               {
                 backgroundColor: isOver
-                  ? (isDarkMode ? '#7F1D1D' : '#FEE2E2')
-                  : (isDarkMode ? '#1E293B' : lightColor),
+                  ? isDarkMode
+                    ? '#7F1D1D'
+                    : '#FEE2E2'
+                  : isDarkMode
+                  ? '#1E293B'
+                  : lightColor,
               },
             ]}
           >
@@ -85,7 +93,7 @@ export const MacroItem: React.FC<MacroItemProps> = ({
       <View style={styles.footerRow}>
         <Text style={styles.remainingText}>
           {isOver
-            ? `${(currentGrams - targetGrams).toFixed(1)}${unit} aşıldı`
+            ? `${(currentGrams - targetGrams).toFixed(unit === 'mg' ? 0 : 1)}${unit} aşıldı`
             : `${remainingGrams}${unit} kaldı`}
         </Text>
       </View>
@@ -100,6 +108,9 @@ interface MacroSummaryCardProps {
   targetCarbsGrams: number;
   fatGrams: number;
   targetFatGrams: number;
+  fiberGrams?: number;
+  sugarGrams?: number;
+  sodiumMg?: number;
 }
 
 export const MacroBar: React.FC<MacroSummaryCardProps> = ({
@@ -109,10 +120,22 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
   targetCarbsGrams,
   fatGrams,
   targetFatGrams,
+  fiberGrams,
+  sugarGrams,
+  sodiumMg,
 }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const getDailySummary = useDietStore((state) => state.getDailySummary);
+  const summary = getDailySummary();
+
+  const [isMicroExpanded, setIsMicroExpanded] = useState(false);
+
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
+
+  const currentFiber = fiberGrams !== undefined ? fiberGrams : summary.totalFiber;
+  const currentSugar = sugarGrams !== undefined ? sugarGrams : summary.totalSugar;
+  const currentSodium = sodiumMg !== undefined ? sodiumMg : summary.totalSodium;
 
   return (
     <View style={styles.container}>
@@ -154,6 +177,65 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
         isDarkMode={isDarkMode}
         styles={styles}
       />
+
+      {/* Phase 2.2: Expandable Micronutrients & Fiber Accordion (Waistline Model) */}
+      <TouchableOpacity
+        style={styles.accordionToggleBtn}
+        onPress={() => setIsMicroExpanded((prev) => !prev)}
+        activeOpacity={0.75}
+      >
+        <View style={styles.accordionTitleGroup}>
+          <Text style={styles.accordionIcon}>🧬</Text>
+          <Text style={styles.accordionTitleText}>
+            Mikro Besin & Lif Detayları ({currentFiber}g Lif)
+          </Text>
+        </View>
+        <Text style={styles.accordionChevron}>{isMicroExpanded ? '▴ Gizle' : '▾ Göster'}</Text>
+      </TouchableOpacity>
+
+      {isMicroExpanded && (
+        <View style={styles.microDrawer}>
+          <MacroItem
+            label="🌾 Diyet Lifi (Fiber)"
+            currentGrams={currentFiber}
+            targetGrams={28}
+            color={Colors.primary}
+            lightColor={Colors.primaryLight}
+            unit="g"
+            theme={theme}
+            isDarkMode={isDarkMode}
+            styles={styles}
+          />
+
+          <View style={styles.itemDivider} />
+
+          <MacroItem
+            label="🍯 Serbest Şeker (Limit)"
+            currentGrams={currentSugar}
+            targetGrams={35}
+            color="#8B5CF6"
+            lightColor="#EDE9FE"
+            unit="g"
+            theme={theme}
+            isDarkMode={isDarkMode}
+            styles={styles}
+          />
+
+          <View style={styles.itemDivider} />
+
+          <MacroItem
+            label="🧂 Sodyum / Tuz (Tavan)"
+            currentGrams={currentSodium}
+            targetGrams={2300}
+            color="#06B6D4"
+            lightColor="#CFFAFE"
+            unit="mg"
+            theme={theme}
+            isDarkMode={isDarkMode}
+            styles={styles}
+          />
+        </View>
+      )}
     </View>
   );
 };
@@ -236,5 +318,42 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       height: 1,
       backgroundColor: theme.border,
       marginVertical: Spacing.sm,
+    },
+    accordionToggleBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: Spacing.md,
+      paddingVertical: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+      backgroundColor: theme.surfaceSubtle,
+      borderRadius: BorderRadius.lg,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    accordionTitleGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    accordionIcon: {
+      fontSize: 14,
+    },
+    accordionTitleText: {
+      ...Typography.captionBold,
+      color: theme.textSecondary,
+    },
+    accordionChevron: {
+      ...Typography.tiny,
+      color: isDarkMode ? theme.primary : Colors.primaryDark,
+      fontWeight: '700',
+    },
+    microDrawer: {
+      marginTop: Spacing.sm,
+      padding: Spacing.md,
+      backgroundColor: isDarkMode ? '#0F172A' : '#F8FAFC',
+      borderRadius: BorderRadius.lg,
+      borderWidth: 1,
+      borderColor: theme.border,
     },
   });
