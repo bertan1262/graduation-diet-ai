@@ -9,10 +9,71 @@ interface ChatBubbleProps {
   message: ChatMessage;
 }
 
+/**
+ * Lightweight inline markdown renderer for bold (**text**) and bullet lists (• item)
+ * Avoids heavy 3rd-party dependencies while preserving React 19 fast rendering.
+ */
+const renderFormattedText = (
+  content: string,
+  baseStyle: object,
+  boldStyle: object,
+  keyPrefix: string
+) => {
+  const lines = content.split('\n');
+
+  return lines.map((line, lineIdx) => {
+    // Check if line is a bullet item
+    const isBullet = line.trim().startsWith('•') || line.trim().startsWith('-');
+    const lineText = isBullet ? line.trim().replace(/^[•\-]\s*/, '') : line;
+
+    // Split by **bold** delimiters
+    const parts = lineText.split(/(\*\*.*?\*\*)/g);
+
+    return (
+      <View
+        key={`${keyPrefix}-line-${lineIdx}`}
+        style={[
+          styles.textLineRow,
+          isBullet && styles.bulletLineRow,
+          lineIdx > 0 && !isBullet && styles.paragraphSpacing,
+        ]}
+      >
+        {isBullet && (
+          <Text style={[baseStyle, styles.bulletDot]}>•</Text>
+        )}
+        <Text style={[baseStyle, isBullet && styles.bulletContent]}>
+          {parts.map((part, partIdx) => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+              const boldContent = part.slice(2, -2);
+              return (
+                <Text
+                  key={`${keyPrefix}-${lineIdx}-${partIdx}`}
+                  style={boldStyle}
+                >
+                  {boldContent}
+                </Text>
+              );
+            }
+            return part;
+          })}
+        </Text>
+      </View>
+    );
+  });
+};
+
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const theme = getThemeColors(isDarkMode);
   const isUser = message.sender === 'user';
+
+  const baseTextStyle = isUser
+    ? styles.messageTextUser
+    : [styles.messageTextAssistant, { color: theme.textPrimary }];
+
+  const boldTextStyle = isUser
+    ? styles.messageTextUserBold
+    : [styles.messageTextAssistantBold, { color: isDarkMode ? '#6EE7B7' : Colors.primaryDark }];
 
   return (
     <View
@@ -57,16 +118,14 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
               ],
         ]}
       >
-        <Text
-          style={[
-            styles.messageText,
-            isUser
-              ? styles.messageTextUser
-              : [styles.messageTextAssistant, { color: theme.textPrimary }],
-          ]}
-        >
-          {message.content}
-        </Text>
+        <View style={styles.contentWrapper}>
+          {renderFormattedText(
+            message.content,
+            baseTextStyle,
+            boldTextStyle,
+            message.id
+          )}
+        </View>
 
         {/* Timestamp */}
         <Text
@@ -79,12 +138,25 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
         </Text>
       </View>
 
-      {/* Optional Medical Safety Note */}
+      {/* Optional Medical Safety Warning Card */}
       {message.isMedicalWarning && (
-        <View style={styles.medicalWarningCard}>
+        <View
+          style={[
+            styles.medicalWarningCard,
+            {
+              backgroundColor: isDarkMode ? '#3F1212' : '#FEF2F2',
+              borderColor: isDarkMode ? '#7F1D1D' : '#FECACA',
+            },
+          ]}
+        >
           <Text style={styles.medicalWarningIcon}>⚠️</Text>
-          <Text style={styles.medicalWarningText}>
-            Bu tavsiye genel beslenme rehberidir. Kronik rahatsızlıklarınız için lütfen hekiminize danışın.
+          <Text
+            style={[
+              styles.medicalWarningText,
+              { color: isDarkMode ? '#FCA5A5' : '#991B1B' },
+            ]}
+          >
+            Bu tavsiye genel beslenme rehberidir. Kronik rahatsızlıklarınız veya ilaç tedaviniz için lütfen hekiminize danışın.
           </Text>
         </View>
       )}
@@ -95,7 +167,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
 const styles = StyleSheet.create({
   container: {
     marginVertical: Spacing.xs + 2,
-    maxWidth: '84%',
+    maxWidth: '86%',
   },
   containerUser: {
     alignSelf: 'flex-end',
@@ -112,22 +184,19 @@ const styles = StyleSheet.create({
     marginLeft: Spacing.xs,
   },
   avatarCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: Colors.primaryMuted,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 6,
   },
   avatarEmoji: {
-    fontSize: 12,
+    fontSize: 13,
   },
   assistantName: {
     ...Typography.tiny,
-    color: Colors.textSecondary,
     fontWeight: '700',
   },
   verifiedDot: {
@@ -138,8 +207,8 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   bubble: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md + 2,
+    paddingVertical: Spacing.md - 2,
     borderRadius: BorderRadius.xl,
     ...Shadows.subtle,
   },
@@ -151,24 +220,53 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: BorderRadius.xl,
   },
   bubbleAssistant: {
-    backgroundColor: Colors.surface,
     borderTopLeftRadius: BorderRadius.xs,
     borderBottomLeftRadius: BorderRadius.xl,
     borderBottomRightRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: Colors.border,
   },
-  messageText: {
-    ...Typography.body,
-    lineHeight: 22,
+  contentWrapper: {
+    flexDirection: 'column',
+  },
+  textLineRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  bulletLineRow: {
+    flexDirection: 'row',
+    paddingLeft: Spacing.xs,
+    marginVertical: 2,
+  },
+  bulletDot: {
+    marginRight: 6,
+    fontWeight: '700',
+  },
+  bulletContent: {
+    flex: 1,
+  },
+  paragraphSpacing: {
+    marginTop: 4,
   },
   messageTextUser: {
+    ...Typography.body,
+    fontSize: 14,
+    lineHeight: 21,
     color: '#FFFFFF',
-    fontWeight: '500',
+    fontWeight: '400',
+  },
+  messageTextUserBold: {
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   messageTextAssistant: {
-    color: Colors.textPrimary,
+    ...Typography.body,
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '400',
+  },
+  messageTextAssistantBold: {
+    fontWeight: '700',
   },
   timestampText: {
     ...Typography.tiny,
@@ -186,13 +284,11 @@ const styles = StyleSheet.create({
   medicalWarningCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: '#FECACA',
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
-    marginTop: 4,
+    marginTop: 6,
     marginLeft: Spacing.xs,
   },
   medicalWarningIcon: {
@@ -202,7 +298,6 @@ const styles = StyleSheet.create({
   medicalWarningText: {
     ...Typography.tiny,
     fontSize: 10,
-    color: '#991B1B',
     flex: 1,
     lineHeight: 14,
   },

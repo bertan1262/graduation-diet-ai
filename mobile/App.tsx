@@ -2,11 +2,10 @@ import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
-  SafeAreaView,
-  Platform,
-  StatusBar as RNStatusBar,
   AppState,
+  BackHandler,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { getThemeColors } from './src/constants/colors';
 import { useDietStore } from './src/store/useDietStore';
@@ -18,16 +17,37 @@ import { CameraScreen } from './src/screens/CameraScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { AnimatedSplashScreen } from './src/components/common/AnimatedSplashScreen';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
-  const {
-    isDarkMode,
-    checkAndRollOverDay,
-    hasCompletedOnboarding,
-    setHasCompletedOnboarding,
-  } = useDietStore();
+  const [isSplashVisible, setIsSplashVisible] = useState(true);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const hasHydrated = useDietStore((state) => state.hasHydrated);
+  const checkAndRollOverDay = useDietStore((state) => state.checkAndRollOverDay);
+  const hasCompletedOnboarding = useDietStore((state) => state.hasCompletedOnboarding);
+  const setHasCompletedOnboarding = useDietStore((state) => state.setHasCompletedOnboarding);
   const theme = getThemeColors(isDarkMode);
+
+  // Android hardware / gesture back button: return to dashboard tab first
+  useEffect(() => {
+    const onBackPress = () => {
+      if (activeTab !== 'dashboard') {
+        setActiveTab('dashboard');
+        return true;
+      }
+      return false;
+    };
+
+    const backSubscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      onBackPress
+    );
+
+    return () => {
+      backSubscription.remove();
+    };
+  }, [activeTab]);
 
   useEffect(() => {
     // Check if midnight rolled over on mount
@@ -44,23 +64,6 @@ export default function App() {
       subscription.remove();
     };
   }, [checkAndRollOverDay]);
-
-  const renderActiveScreen = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <DashboardScreen />;
-      case 'plan':
-        return <MealPlanScreen />;
-      case 'camera':
-        return <CameraScreen onNavigateToDashboard={() => setActiveTab('dashboard')} />;
-      case 'chat':
-        return <ChatScreen />;
-      case 'profile':
-        return <ProfileScreen />;
-      default:
-        return <DashboardScreen />;
-    }
-  };
 
   const getScreenTitle = () => {
     switch (activeTab) {
@@ -79,48 +82,83 @@ export default function App() {
     }
   };
 
-  if (!hasCompletedOnboarding) {
-    return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
-        <StatusBar style={isDarkMode ? 'light' : 'dark'} />
-        <OnboardingScreen
-          isEditing={false}
-          onComplete={() => {
-            setHasCompletedOnboarding(true);
-            setActiveTab('dashboard');
-          }}
-        />
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
-      <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+    <SafeAreaProvider>
+      <SafeAreaView
+        edges={['top', 'left', 'right']}
+        style={[styles.safeArea, { backgroundColor: theme.background }]}
+      >
+        <StatusBar style={isDarkMode ? 'light' : 'dark'} />
 
-      {/* Top Reusable Header with Dark Mode Toggle */}
-      <Header
-        title={getScreenTitle()}
-        onAvatarPress={() => setActiveTab('profile')}
-      />
+        {/* Once hydrated, mount the appropriate application branch */}
+        {hasHydrated && (
+          !hasCompletedOnboarding ? (
+            <OnboardingScreen
+              isEditing={false}
+              onComplete={() => {
+                setHasCompletedOnboarding(true);
+                setActiveTab('dashboard');
+              }}
+            />
+          ) : (
+            <>
+              {/* Top Reusable Header with Dark Mode Toggle */}
+              <Header
+                title={getScreenTitle()}
+                onAvatarPress={() => setActiveTab('profile')}
+              />
 
-      {/* Dynamic Screen Body */}
-      <View style={[styles.body, { backgroundColor: theme.background }]}>
-        {renderActiveScreen()}
-      </View>
+              {/* Persistent Screen Body: Preserves scroll positions, local form inputs & active day tabs */}
+              <View style={[styles.body, { backgroundColor: theme.background }]}>
+                <View style={[styles.tabContent, activeTab !== 'dashboard' && styles.hiddenContent]}>
+                  <DashboardScreen />
+                </View>
+                <View style={[styles.tabContent, activeTab !== 'plan' && styles.hiddenContent]}>
+                  <MealPlanScreen />
+                </View>
+                <View style={[styles.tabContent, activeTab !== 'camera' && styles.hiddenContent]}>
+                  <CameraScreen
+                    isActive={activeTab === 'camera'}
+                    onNavigateToDashboard={() => setActiveTab('dashboard')}
+                  />
+                </View>
+                <View style={[styles.tabContent, activeTab !== 'chat' && styles.hiddenContent]}>
+                  <ChatScreen />
+                </View>
+                <View style={[styles.tabContent, activeTab !== 'profile' && styles.hiddenContent]}>
+                  <ProfileScreen />
+                </View>
+              </View>
 
-      {/* Bottom Floating Navigation Bar */}
-      <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
-    </SafeAreaView>
+              {/* Bottom Floating Navigation Bar */}
+              <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+            </>
+          )
+        )}
+
+        {/* Non-blocking Lightweight Animated Splash Screen */}
+        {isSplashVisible && (
+          <AnimatedSplashScreen
+            hasHydrated={hasHydrated}
+            onFinish={() => setIsSplashVisible(false)}
+          />
+        )}
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight || 0 : 0,
   },
   body: {
     flex: 1,
+  },
+  tabContent: {
+    flex: 1,
+  },
+  hiddenContent: {
+    display: 'none',
   },
 });

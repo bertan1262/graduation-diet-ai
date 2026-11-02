@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  Linking,
 } from 'react-native';
 import {
   CameraView,
@@ -16,6 +17,8 @@ import {
   BarcodeScanningResult,
 } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { CaptureButton } from '../components/camera/CaptureButton';
@@ -33,12 +36,46 @@ export interface CapturedPhotoData {
   height?: number;
 }
 
+/**
+ * Compresses and resizes high-resolution camera/gallery images before Base64 conversion.
+ * Reduces 10MB camera frames to ~200-300KB, preventing memory spikes and frame drops.
+ */
+async function optimizeImageForAnalysis(sourceUri: string): Promise<{
+  uri: string;
+  base64?: string;
+  width: number;
+  height: number;
+}> {
+  try {
+    const manipResult = await ImageManipulator.manipulateAsync(
+      sourceUri,
+      [{ resize: { width: 1024 } }],
+      {
+        compress: 0.7,
+        format: ImageManipulator.SaveFormat.JPEG,
+        base64: true,
+      }
+    );
+    return {
+      uri: manipResult.uri,
+      base64: manipResult.base64,
+      width: manipResult.width,
+      height: manipResult.height,
+    };
+  } catch (e) {
+    console.warn('Image optimization skipped or failed, using original uri:', e);
+    return { uri: sourceUri, width: 1024, height: 1024 };
+  }
+}
+
 export interface CameraScreenProps {
   onNavigateToDashboard?: () => void;
+  isActive?: boolean;
 }
 
 export const CameraScreen: React.FC<CameraScreenProps> = ({
   onNavigateToDashboard,
+  isActive = true,
 }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const startBackgroundAnalysis = useDietStore((state) => state.startBackgroundAnalysis);
@@ -64,6 +101,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 
   // Cycle flash modes: off -> on -> auto -> off
   const handleCycleFlash = () => {
+    Haptics.selectionAsync().catch(() => {});
     setFlash((prev) => {
       if (prev === 'off') return 'on';
       if (prev === 'on') return 'auto';
@@ -84,7 +122,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 
   // Day 16: Open Food Facts Barcode Scan Handler
   const handleBarcodeScanned = async ({ data }: BarcodeScanningResult) => {
-    if (cameraMode !== 'barcode' || isBarcodeLoading) return;
+    if (!isActive || cameraMode !== 'barcode' || isBarcodeLoading) return;
 
     const now = Date.now();
     // Debounce 3 seconds to avoid duplicate triggers
@@ -93,6 +131,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 
     setIsBarcodeLoading(true);
     setScannedBarcodeText(data);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
 
     try {
       const result = await fetchProductByBarcode(data);
@@ -107,8 +146,12 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       // Directly open the bottom sheet FoodAnalysisModal with the recognized product nutrition
       setIsAnalysisModalVisible(true);
     } catch (error) {
-      console.error('Barkod taranırken hata oluştu:', error);
-      Alert.alert('Barkod Hatası', 'Barkod bilgisi işlenemedi. Lütfen tekrar deneyin.');
+      console.warn('Barkod taranırken hata oluştu:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Barkod bilgisi işlenemedi. Lütfen tekrar deneyin.';
+      Alert.alert('Barkod Bilgisi', message);
     } finally {
       setIsBarcodeLoading(false);
       setScannedBarcodeText(null);
@@ -118,6 +161,8 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   // Day 9 & 10: Instant Photo Capture & Immediate Futuristic Laser Scan Flow
   const handleCapturePress = async () => {
     if (isCapturing) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 
     // In Barcode Mode: If the user presses the shutter manually, trigger demo barcode scan
     if (cameraMode === 'barcode') {
@@ -141,14 +186,12 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
       if (cameraRef.current) {
         try {
           const photo = await cameraRef.current.takePictureAsync({
-            quality: 0.7,
-            base64: true,
+            quality: 0.8,
             skipProcessing: false,
           });
 
           if (photo?.uri) {
             imageUri = photo.uri;
-            imageBase64 = photo.base64;
             width = photo.width;
             height = photo.height;
           }
@@ -165,6 +208,13 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         imageUri =
           'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1000&q=80';
       }
+
+      // Compress and optimize image to 1024px, 0.7 JPEG
+      const optimized = await optimizeImageForAnalysis(imageUri);
+      imageUri = optimized.uri;
+      imageBase64 = optimized.base64;
+      if (optimized.width) width = optimized.width;
+      if (optimized.height) height = optimized.height;
 
       setCapturedImage({
         uri: imageUri,
@@ -217,24 +267,30 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        quality: 0.7,
-        base64: true,
+        quality: 0.8,
         selectionLimit: 1,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+
+        // Optimize gallery photo before Base64 analysis
+        const optimized = await optimizeImageForAnalysis(asset.uri);
+        const finalUri = optimized.uri;
+        const finalBase64 = optimized.base64 || asset.base64;
+
         setCapturedImage({
-          uri: asset.uri,
-          base64: asset.base64,
-          width: asset.width,
-          height: asset.height,
+          uri: finalUri,
+          base64: finalBase64,
+          width: optimized.width || asset.width,
+          height: optimized.height || asset.height,
         });
         // Immediately start laser scan on picked gallery image
         setIsScanning(true);
 
         // Concurrently query AI vision recognition service (live or mock) using Base64 data
-        const payloadToAnalyze = asset.base64 || asset.uri;
+        const payloadToAnalyze = finalBase64 || finalUri;
         recognitionPromiseRef.current = apiService
           .analyzeFoodImage(payloadToAnalyze)
           .then((res) => {
@@ -299,7 +355,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     setDetectedFoods(undefined);
     if (cameraRef.current) {
       try {
-        cameraRef.current.resumePreview();
+        cameraRef.current.resumePreview?.()?.catch?.(() => {});
       } catch {
         // Ignore
       }
@@ -328,7 +384,7 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     setDetectedFoods(undefined);
     if (cameraRef.current) {
       try {
-        cameraRef.current.resumePreview();
+        cameraRef.current.resumePreview?.()?.catch?.(() => {});
       } catch {
         // Ignore
       }
@@ -337,13 +393,14 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 
   // Confirm meal logging and return to live camera feed
   const handleConfirmMeal = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     setIsAnalysisModalVisible(false);
     setCapturedImage(null);
     setDetectedFood(undefined);
     setDetectedFoods(undefined);
     if (cameraRef.current) {
       try {
-        cameraRef.current.resumePreview();
+        cameraRef.current.resumePreview?.()?.catch?.(() => {});
       } catch {
         // Ignore
       }
@@ -351,7 +408,16 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
     Alert.alert(
       '🎉 Başarıyla Kaydedildi!',
       'Yemek günlük beslenme listenize eklendi. Günlük kalori, sağlık skoru ve makro ilerlemeniz anında güncellendi.',
-      [{ text: 'Harika!' }]
+      [
+        {
+          text: 'Özete Git 📊',
+          onPress: () => onNavigateToDashboard?.(),
+        },
+        {
+          text: 'Yeni Çekim 📸',
+          style: 'cancel',
+        },
+      ]
     );
   };
 
@@ -451,9 +517,18 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
           </TouchableOpacity>
 
           {!permission.canAskAgain && (
-            <Text style={styles.deniedWarningText}>
-              ⚠️ Kamera izni reddedildi. Lütfen telefonunuzun Ayarlar menüsünden DietAI uygulamasına kamera izni verin.
-            </Text>
+            <View style={styles.deniedContainer}>
+              <Text style={styles.deniedWarningText}>
+                ⚠️ Kamera izni reddedildi. Lütfen telefonunuzun Ayarlar menüsünden DietAI uygulamasına kamera izni verin.
+              </Text>
+              <TouchableOpacity
+                style={styles.settingsButton}
+                onPress={() => Linking.openSettings()}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.settingsButtonText}>⚙️ Cihaz Ayarlarını Aç</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </View>
@@ -498,16 +573,20 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
   return (
     <View style={styles.cameraContainer}>
       {/* 1. Native Camera Feed View with Ref & Barcode Scanner Settings */}
-      <CameraView
-        ref={cameraRef}
-        style={StyleSheet.absoluteFill}
-        facing={facing}
-        flash={flash}
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr', 'ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39'],
-        }}
-        onBarcodeScanned={cameraMode === 'barcode' ? handleBarcodeScanned : undefined}
-      />
+      {isActive ? (
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          facing={facing}
+          flash={flash}
+          barcodeScannerSettings={{
+            barcodeTypes: ['qr', 'ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39'],
+          }}
+          onBarcodeScanned={cameraMode === 'barcode' ? handleBarcodeScanned : undefined}
+        />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }]} />
+      )}
 
       {/* 2. Independent HUD Controls Overlay (Rendered on top with zIndex) */}
       <View style={styles.overlayContainer} pointerEvents="box-none">
@@ -774,6 +853,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.md,
     lineHeight: 16,
+  },
+  deniedContainer: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  settingsButton: {
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  settingsButtonText: {
+    ...Typography.captionBold,
+    color: Colors.textPrimary,
   },
   cameraContainer: {
     flex: 1,

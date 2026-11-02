@@ -201,6 +201,25 @@ export interface UserProfile {
   mainObstacles?: string[];
 }
 
+export interface UserDietContext {
+  targetCalories: number;
+  consumedCalories: number;
+  remainingCalories: number;
+  consumedProtein: number;
+  targetProtein: number;
+  consumedCarbs: number;
+  targetCarbs: number;
+  consumedFat: number;
+  targetFat: number;
+  waterIntakeMl: number;
+  waterGoalMl: number;
+  goal: string;
+  currentWeightKg: number;
+  targetWeightKg?: number;
+  bmr: number;
+  recentMealNames?: string[];
+}
+
 export interface ChatMessage {
   id: string;
   sender: 'user' | 'assistant';
@@ -218,4 +237,30 @@ export interface MealPlanDay {
   dinner: string;
   snacks: string[];
   targetCalories: number;
+}
+
+export interface MealRecipe {
+  id: string;
+  title: string;
+  description: string;
+  calories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
+  tags: string[];
+  allergens?: ('lactose' | 'gluten' | 'peanut' | 'egg' | 'seafood')[];
+  dietTypes?: ('vegetarian' | 'vegan' | 'keto' | 'balanced' | 'high_protein')[];
+}
+
+export interface DayPlan {
+  dayId: string;
+  dayName: string;
+  dayShort: string;
+  dayOfMonth: number;
+  monthName: string;
+  isToday: boolean;
+  breakfast: MealRecipe;
+  lunch: MealRecipe;
+  dinner: MealRecipe;
+  snack: MealRecipe;
 }

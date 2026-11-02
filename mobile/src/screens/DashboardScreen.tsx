@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors, ThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { LoggedMealItem, MealType } from '../types';
@@ -16,30 +17,32 @@ import { CalorieRing } from '../components/dashboard/CalorieRing';
 import { MacroBar } from '../components/dashboard/MacroBar';
 import { WaterTracker } from '../components/dashboard/WaterTracker';
 import { MealSection } from '../components/dashboard/MealSection';
-import { WeeklyProgressChart } from '../components/dashboard/WeeklyProgressChart';
 import { EditPortionModal } from '../components/nutrition/EditPortionModal';
 import { FoodAnalysisModal } from '../components/nutrition/FoodAnalysisModal';
 import { RecipeBuilderModal } from '../components/nutrition/RecipeBuilderModal';
+import { FoodSearchModal } from '../components/nutrition/FoodSearchModal';
 import { AnalyticsScreen } from './AnalyticsScreen';
 
 export const DashboardScreen: React.FC = () => {
-  const {
-    userProfile,
-    todayMeals,
-    waterIntakeMl,
-    streakDays,
-    pendingAnalysis,
-    clearPendingAnalysis,
-    addWater,
-    addMeal,
-    updateMeal,
-    removeMeal,
-    getDailySummary,
-    isDarkMode,
-  } = useDietStore();
+  const userProfile = useDietStore((state) => state.userProfile);
+  const todayMeals = useDietStore((state) => state.todayMeals);
+  const waterIntakeMl = useDietStore((state) => state.waterIntakeMl);
+  const streakDays = useDietStore((state) => state.streakDays);
+  const pendingAnalysis = useDietStore((state) => state.pendingAnalysis);
+  const clearPendingAnalysis = useDietStore((state) => state.clearPendingAnalysis);
+  const addWater = useDietStore((state) => state.addWater);
+  const addMeal = useDietStore((state) => state.addMeal);
+  const updateMeal = useDietStore((state) => state.updateMeal);
+  const removeMeal = useDietStore((state) => state.removeMeal);
+  const getDailySummary = useDietStore((state) => state.getDailySummary);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
-  const summary = getDailySummary();
+  const summary = useMemo(
+    () => getDailySummary(),
+    [getDailySummary, todayMeals, waterIntakeMl, userProfile]
+  );
 
   const [activeSegment, setActiveSegment] = useState<'today' | 'analytics'>('today');
   const [selectedMealForEdit, setSelectedMealForEdit] = useState<LoggedMealItem | null>(
@@ -47,6 +50,15 @@ export const DashboardScreen: React.FC = () => {
   );
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [isRecipeBuilderOpen, setIsRecipeBuilderOpen] = useState(false);
+  const [isFoodSearchOpen, setIsFoodSearchOpen] = useState(false);
+  const [isMicroDrawerOpen, setIsMicroDrawerOpen] = useState(false);
+
+  // Trigger milestone haptic celebration when calorie target is reached
+  useEffect(() => {
+    if (summary.calorieProgressPercent >= 100) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
+  }, [summary.calorieProgressPercent >= 100]);
 
   const handleQuickAdd = (mealType: MealType) => {
     const presets: Record<
@@ -162,7 +174,7 @@ export const DashboardScreen: React.FC = () => {
           contentContainerStyle={styles.container}
           showsVerticalScrollIndicator={false}
         >
-          {/* Phase 3.1: Cal AI Asynchronous Background Food Analyzing Card */}
+          {/* Cal AI Background Food Analyzing Card */}
           {pendingAnalysis.status !== 'idle' && (
             <View
               style={[
@@ -239,47 +251,85 @@ export const DashboardScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Daily Target & Circular Calorie Ring Card */}
-          <View style={styles.card}>
-            {/* Phase 1.1: Cal AI Gamification Row (Streak + Health Score 0-100 Badge) */}
-            <View style={styles.gamificationRow}>
-              <View style={styles.streakPill}>
-                <Text style={styles.streakIcon}>🔥</Text>
-                <Text style={styles.streakText}>{streakDays} Günlük Seri</Text>
-              </View>
-
-              <View
-                style={[
-                  styles.healthScorePill,
-                  summary.healthScore >= 80
-                    ? styles.healthScoreHigh
-                    : summary.healthScore >= 50
-                    ? styles.healthScoreMid
-                    : styles.healthScoreLow,
-                ]}
-              >
-                <Text style={styles.healthScoreEmoji}>🛡️</Text>
-                <Text style={styles.healthScoreValue}>
-                  Sağlık Skoru: {summary.healthScore}/100
-                </Text>
-                <Text style={styles.healthScoreSub}>• {summary.healthScoreLabel}</Text>
-              </View>
+          {/* Gamification Row (Streak + Health Score) */}
+          <View style={styles.gamificationRow}>
+            <View style={styles.streakPill}>
+              <Text style={styles.streakIcon}>🔥</Text>
+              <Text style={styles.streakText}>{streakDays} Günlük Seri</Text>
             </View>
 
+            <View
+              style={[
+                styles.healthScorePill,
+                summary.healthScore >= 80
+                  ? styles.healthScoreHigh
+                  : summary.healthScore >= 50
+                  ? styles.healthScoreMid
+                  : styles.healthScoreLow,
+              ]}
+            >
+              <Text style={styles.healthScoreEmoji}>🛡️</Text>
+              <Text style={styles.healthScoreValue}>
+                Sağlık Skoru: {summary.healthScore}/100
+              </Text>
+              <Text style={styles.healthScoreSub}>• {summary.healthScoreLabel}</Text>
+            </View>
+          </View>
+
+          {/* Target Celebration Banner */}
+          {summary.calorieProgressPercent >= 100 && (
+            <View style={styles.celebrationBanner}>
+              <Text style={styles.celebrationEmoji}>🎉 🏆</Text>
+              <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                <Text style={styles.celebrationTitle}>Harika! Günlük Kalori Hedefine Ulaştın!</Text>
+                <Text style={styles.celebrationDesc}>
+                  Beslenme disiplinin mükemmel ilerliyor, sağlıklı yaşam yolculuğunu kutluyoruz!
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* MODERN BENTO HERO CARD: Integrated Calories & Macros */}
+          <View style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Günün Kalori Dengesi</Text>
+              <View>
+                <Text style={styles.cardTitle}>Günün Kalori & Makro Dengesi</Text>
+                <Text style={styles.cardSubtitle}>
+                  Kalan: {summary.remainingCalories} kcal • Hedef: {userProfile.targetCalories} kcal
+                </Text>
+              </View>
               <View style={styles.percentBadge}>
                 <Text style={styles.percentText}>%{summary.calorieProgressPercent}</Text>
               </View>
             </View>
 
-            {/* Central Circular Calorie Progress Ring */}
-            <CalorieRing
-              consumedCalories={summary.totalCalories}
-              targetCalories={userProfile.targetCalories}
-            />
+            {/* Bento Inner Grid: Calorie Ring (Left) + Macro Bars (Right) */}
+            <View style={styles.bentoHeroRow}>
+              <View style={styles.bentoRingCol}>
+                <CalorieRing
+                  consumedCalories={summary.totalCalories}
+                  targetCalories={userProfile.targetCalories}
+                  size={135}
+                  strokeWidth={11}
+                  showRemainingPill={false}
+                />
+              </View>
 
-            {/* Live Reactive Metric Row */}
+              <View style={styles.bentoMacroCol}>
+                <MacroBar
+                  proteinGrams={summary.totalProtein}
+                  targetProteinGrams={userProfile.targetProteinGrams}
+                  carbsGrams={summary.totalCarbs}
+                  targetCarbsGrams={userProfile.targetCarbsGrams}
+                  fatGrams={summary.totalFat}
+                  targetFatGrams={userProfile.targetFatGrams}
+                  hideTitle={true}
+                  compact={true}
+                />
+              </View>
+            </View>
+
+            {/* Metric Chips Row */}
             <View style={styles.metricRow}>
               <View style={styles.metricItem}>
                 <Text style={styles.metricValue}>{summary.totalCalories}</Text>
@@ -298,21 +348,42 @@ export const DashboardScreen: React.FC = () => {
                 <Text style={styles.metricLabel}>Hedef (kcal)</Text>
               </View>
             </View>
-          </View>
 
-          {/* Reactive Macronutrients & Micronutrients Accordion Card */}
-          <View style={styles.card}>
-            <MacroBar
-              proteinGrams={summary.totalProtein}
-              targetProteinGrams={userProfile.targetProteinGrams}
-              carbsGrams={summary.totalCarbs}
-              targetCarbsGrams={userProfile.targetCarbsGrams}
-              fatGrams={summary.totalFat}
-              targetFatGrams={userProfile.targetFatGrams}
-              fiberGrams={summary.totalFiber}
-              sugarGrams={summary.totalSugar}
-              sodiumMg={summary.totalSodium}
-            />
+            {/* Expandable Micronutrient Accordion */}
+            <TouchableOpacity
+              style={styles.microAccordionBtn}
+              onPress={() => setIsMicroDrawerOpen((prev) => !prev)}
+              activeOpacity={0.75}
+            >
+              <View style={styles.microAccordionTitleRow}>
+                <Text style={styles.microAccordionIcon}>🧬</Text>
+                <Text style={styles.microAccordionTitle}>
+                  Mikro Besin & Lif Detayları ({summary.totalFiber}g Lif)
+                </Text>
+              </View>
+              <Text style={styles.microAccordionChevron}>
+                {isMicroDrawerOpen ? '▴ Gizle' : '▾ Göster'}
+              </Text>
+            </TouchableOpacity>
+
+            {isMicroDrawerOpen && (
+              <View style={styles.microDrawerContainer}>
+                <View style={styles.microItemRow}>
+                  <Text style={styles.microItemLabel}>🌾 Diyet Lifi</Text>
+                  <Text style={styles.microItemValue}>{summary.totalFiber}g / 28g</Text>
+                </View>
+                <View style={styles.microDivider} />
+                <View style={styles.microItemRow}>
+                  <Text style={styles.microItemLabel}>🍯 Serbest Şeker</Text>
+                  <Text style={styles.microItemValue}>{summary.totalSugar}g / 35g (limit)</Text>
+                </View>
+                <View style={styles.microDivider} />
+                <View style={styles.microItemRow}>
+                  <Text style={styles.microItemLabel}>🧂 Sodyum / Tuz</Text>
+                  <Text style={styles.microItemValue}>{summary.totalSodium}mg / 2300mg</Text>
+                </View>
+              </View>
+            )}
           </View>
 
           {/* Interactive Water Tracker Card */}
@@ -324,23 +395,33 @@ export const DashboardScreen: React.FC = () => {
             />
           </View>
 
-          {/* Categorized Meals Card */}
+          {/* Categorized Meals Card with Modern Interactive Slots */}
           <View style={styles.card}>
             <View style={styles.mealsHeaderRow}>
-              <View>
+              <View style={styles.mealsTitleGroup}>
                 <Text style={styles.sectionTitle}>Bugün Tüketilen Öğünler</Text>
                 <Text style={styles.mealsSubtitleText}>
                   {todayMeals.length} kayıtlı öğün • Birim ve gramaj düzenlenebilir
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.recipeBuilderBtn}
-                onPress={() => setIsRecipeBuilderOpen(true)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.recipeBuilderBtnText}>👩‍🍳 Özel Tarif</Text>
-              </TouchableOpacity>
+              <View style={styles.headerButtonsRow}>
+                <TouchableOpacity
+                  style={styles.foodSearchBtn}
+                  onPress={() => setIsFoodSearchOpen(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.foodSearchBtnText}>🔍 Yemek Ara</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.recipeBuilderBtn}
+                  onPress={() => setIsRecipeBuilderOpen(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.recipeBuilderBtnText}>👩‍🍳 Tarif</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <MealSection
@@ -383,39 +464,50 @@ export const DashboardScreen: React.FC = () => {
               onEditMeal={setSelectedMealForEdit}
             />
           </View>
-
-          {/* 7-Day SVG Trend & Progress Chart */}
-          <WeeklyProgressChart />
         </ScrollView>
       )}
 
-      {/* Milestone 2 & 3: Interactive Food & Portion Edit Modal */}
-      <EditPortionModal
-        visible={!!selectedMealForEdit}
-        meal={selectedMealForEdit}
-        onClose={() => setSelectedMealForEdit(null)}
-        onSave={(updated) => updateMeal(updated.id, updated)}
-        onDelete={removeMeal}
-      />
+      {/* Edit Portion Modal */}
+      {selectedMealForEdit && (
+        <EditPortionModal
+          visible={Boolean(selectedMealForEdit)}
+          meal={selectedMealForEdit}
+          onClose={() => setSelectedMealForEdit(null)}
+          onSave={(updatedMeal) => {
+            updateMeal(updatedMeal.id, updatedMeal);
+            setSelectedMealForEdit(null);
+          }}
+        />
+      )}
 
-      {/* Phase 3.1: Background Analysis Review Modal */}
-      <FoodAnalysisModal
-        visible={isPendingModalOpen}
-        imageUri={pendingAnalysis.imageUri || null}
-        detectedFood={pendingAnalysis.detectedFood}
-        detectedFoods={pendingAnalysis.detectedFoods}
-        onClose={() => setIsPendingModalOpen(false)}
-        onConfirm={() => {
-          setIsPendingModalOpen(false);
-          clearPendingAnalysis();
-        }}
-      />
+      {/* Background Cal AI Analysis Review Modal */}
+      {isPendingModalOpen && pendingAnalysis.status === 'ready' && (
+        <FoodAnalysisModal
+          visible={isPendingModalOpen}
+          imageUri={pendingAnalysis.imageUri ?? null}
+          detectedFoods={pendingAnalysis.detectedFoods}
+          onClose={() => {
+            setIsPendingModalOpen(false);
+            clearPendingAnalysis();
+          }}
+        />
+      )}
 
-      {/* Phase 4.2: Waistline Custom Recipe Builder Modal */}
-      <RecipeBuilderModal
-        visible={isRecipeBuilderOpen}
-        onClose={() => setIsRecipeBuilderOpen(false)}
-      />
+      {/* Recipe Builder Modal */}
+      {isRecipeBuilderOpen && (
+        <RecipeBuilderModal
+          visible={isRecipeBuilderOpen}
+          onClose={() => setIsRecipeBuilderOpen(false)}
+        />
+      )}
+
+      {/* Food Search Modal */}
+      {isFoodSearchOpen && (
+        <FoodSearchModal
+          visible={isFoodSearchOpen}
+          onClose={() => setIsFoodSearchOpen(false)}
+        />
+      )}
     </View>
   );
 };
@@ -424,242 +516,7 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
   StyleSheet.create({
     container: {
       padding: Spacing.lg,
-      backgroundColor: theme.background,
-    },
-    bgAnalysisCard: {
-      backgroundColor: theme.surface,
-      borderRadius: BorderRadius.xl,
-      padding: Spacing.md,
-      borderWidth: 1.5,
-      borderColor: theme.calories,
-      marginBottom: Spacing.lg,
-      ...Shadows.card,
-    },
-    bgAnalysisCardReady: {
-      borderColor: theme.primary,
-      backgroundColor: isDarkMode ? '#064E3B' : '#ECFDF5',
-    },
-    bgAnalysisRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    bgAnalysisThumb: {
-      width: 54,
-      height: 54,
-      borderRadius: BorderRadius.lg,
-      marginRight: Spacing.md,
-      borderWidth: 1.5,
-      borderColor: theme.primary,
-    },
-    bgAnalysisThumbPlaceholder: {
-      width: 54,
-      height: 54,
-      borderRadius: BorderRadius.lg,
-      backgroundColor: theme.surfaceSubtle,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: Spacing.md,
-    },
-    bgAnalysisInfo: {
-      flex: 1,
-    },
-    bgStatusBadgeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 2,
-    },
-    bgAnalysisBadgeText: {
-      ...Typography.tiny,
-      fontSize: 10,
-      fontWeight: '800',
-      color: theme.primary,
-      letterSpacing: 0.6,
-    },
-    bgAnalysisTitle: {
-      ...Typography.bodyBold,
-      color: theme.textPrimary,
-    },
-    bgAnalysisSub: {
-      ...Typography.tiny,
-      color: theme.textSecondary,
-      marginTop: 1,
-    },
-    bgDismissBtn: {
-      padding: 6,
-      marginLeft: 4,
-    },
-    bgDismissText: {
-      fontSize: 14,
-      color: theme.textMuted,
-      fontWeight: '700',
-    },
-    bgReviewButton: {
-      marginTop: Spacing.sm,
-      backgroundColor: theme.primary,
-      paddingVertical: Spacing.sm,
-      borderRadius: BorderRadius.lg,
-      alignItems: 'center',
-    },
-    bgReviewButtonText: {
-      ...Typography.captionBold,
-      color: '#FFFFFF',
-    },
-    gamificationRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: Spacing.md,
-      paddingBottom: Spacing.sm,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.border,
-      flexWrap: 'wrap',
-      gap: 6,
-    },
-    streakPill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: isDarkMode ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7',
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: BorderRadius.full,
-      borderWidth: 1,
-      borderColor: isDarkMode ? 'rgba(245, 158, 11, 0.4)' : '#FDE68A',
-    },
-    streakIcon: {
-      fontSize: 13,
-      marginRight: 4,
-    },
-    streakText: {
-      ...Typography.tiny,
-      color: isDarkMode ? '#FCD34D' : '#B45309',
-      fontWeight: '800',
-    },
-    healthScorePill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: BorderRadius.full,
-      borderWidth: 1,
-    },
-    healthScoreHigh: {
-      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
-      borderColor: theme.primary,
-    },
-    healthScoreMid: {
-      backgroundColor: isDarkMode ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE',
-      borderColor: Colors.protein,
-    },
-    healthScoreLow: {
-      backgroundColor: theme.surfaceSubtle,
-      borderColor: theme.border,
-    },
-    healthScoreEmoji: {
-      fontSize: 12,
-      marginRight: 4,
-    },
-    healthScoreValue: {
-      ...Typography.tiny,
-      fontWeight: '800',
-      color: theme.textPrimary,
-    },
-    healthScoreSub: {
-      ...Typography.tiny,
-      fontSize: 10,
-      color: theme.textSecondary,
-      marginLeft: 4,
-    },
-    card: {
-      backgroundColor: theme.surface,
-      borderRadius: BorderRadius.xl,
-      padding: Spacing.xl,
-      borderWidth: 1,
-      borderColor: theme.border,
-      ...Shadows.card,
-      marginBottom: Spacing.lg,
-    },
-    cardHeaderRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    cardTitle: {
-      ...Typography.h2,
-      color: theme.textPrimary,
-    },
-    cardSubtitle: {
-      ...Typography.body,
-      color: theme.textMuted,
-      marginTop: Spacing.xs,
-    },
-    bold: {
-      fontWeight: '700',
-      color: theme.textPrimary,
-    },
-    percentBadge: {
-      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
-      paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.xs,
-      borderRadius: BorderRadius.full,
-    },
-    percentText: {
-      ...Typography.captionBold,
-      color: isDarkMode ? theme.primary : Colors.primaryDark,
-    },
-    metricRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginTop: Spacing.lg,
-      paddingTop: Spacing.lg,
-      borderTopWidth: 1,
-      borderTopColor: theme.border,
-    },
-    metricItem: {
-      flex: 1,
-      alignItems: 'center',
-    },
-    metricValue: {
-      ...Typography.h1,
-      color: theme.textPrimary,
-    },
-    metricLabel: {
-      ...Typography.caption,
-      color: theme.textMuted,
-      marginTop: 2,
-    },
-    divider: {
-      width: 1,
-      height: 36,
-      backgroundColor: theme.border,
-    },
-    sectionTitle: {
-      ...Typography.h3,
-      color: theme.textPrimary,
-    },
-    mealsSubtitleText: {
-      ...Typography.tiny,
-      color: theme.textMuted,
-      marginTop: 1,
-    },
-    mealsHeaderRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: Spacing.md,
-    },
-    recipeBuilderBtn: {
-      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
-      paddingHorizontal: Spacing.md,
-      paddingVertical: 6,
-      borderRadius: BorderRadius.full,
-      borderWidth: 1,
-      borderColor: theme.primary,
-    },
-    recipeBuilderBtnText: {
-      ...Typography.tiny,
-      color: isDarkMode ? theme.primary : Colors.primaryDark,
-      fontWeight: '700',
+      paddingBottom: Spacing.xl * 2,
     },
     segmentContainer: {
       flexDirection: 'row',
@@ -689,5 +546,357 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
     },
     segmentTextActive: {
       color: isDarkMode ? theme.primary : Colors.primaryDark,
+    },
+    card: {
+      backgroundColor: theme.surface,
+      borderRadius: BorderRadius.xl,
+      padding: Spacing.lg,
+      marginBottom: Spacing.md,
+      borderWidth: 1,
+      borderColor: theme.border,
+      ...Shadows.card,
+    },
+    cardHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: Spacing.sm,
+    },
+    cardTitle: {
+      ...Typography.h3,
+      color: theme.textPrimary,
+    },
+    cardSubtitle: {
+      ...Typography.tiny,
+      color: theme.textMuted,
+      marginTop: 2,
+    },
+    percentBadge: {
+      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
+      paddingHorizontal: Spacing.sm + 2,
+      paddingVertical: 3,
+      borderRadius: BorderRadius.full,
+    },
+    percentText: {
+      ...Typography.captionBold,
+      color: isDarkMode ? theme.primary : Colors.primaryDark,
+    },
+    bentoHeroRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: Spacing.xs,
+    },
+    bentoRingCol: {
+      width: 135,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    bentoMacroCol: {
+      flex: 1,
+      paddingLeft: Spacing.md,
+      justifyContent: 'center',
+    },
+    metricRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: Spacing.md,
+      paddingTop: Spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: theme.border,
+    },
+    metricItem: {
+      flex: 1,
+      alignItems: 'center',
+    },
+    metricValue: {
+      ...Typography.h2,
+      fontSize: 20,
+      color: theme.textPrimary,
+    },
+    metricLabel: {
+      ...Typography.tiny,
+      color: theme.textMuted,
+      marginTop: 2,
+    },
+    divider: {
+      width: 1,
+      height: 28,
+      backgroundColor: theme.border,
+    },
+    microAccordionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: Spacing.md,
+      paddingVertical: Spacing.xs + 2,
+      paddingHorizontal: Spacing.md,
+      backgroundColor: theme.surfaceSubtle,
+      borderRadius: BorderRadius.lg,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    microAccordionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    microAccordionIcon: {
+      fontSize: 13,
+    },
+    microAccordionTitle: {
+      ...Typography.captionBold,
+      fontSize: 12,
+      color: theme.textSecondary,
+    },
+    microAccordionChevron: {
+      ...Typography.tiny,
+      color: isDarkMode ? theme.primary : Colors.primaryDark,
+      fontWeight: '700',
+    },
+    microDrawerContainer: {
+      marginTop: Spacing.sm,
+      padding: Spacing.md,
+      backgroundColor: isDarkMode ? '#0F172A' : '#F8FAFC',
+      borderRadius: BorderRadius.lg,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    microItemRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 2,
+    },
+    microItemLabel: {
+      ...Typography.captionBold,
+      fontSize: 12,
+      color: theme.textPrimary,
+    },
+    microItemValue: {
+      ...Typography.caption,
+      fontSize: 12,
+      color: theme.textSecondary,
+      fontWeight: '600',
+    },
+    microDivider: {
+      height: 1,
+      backgroundColor: theme.border,
+      marginVertical: Spacing.xs,
+    },
+    gamificationRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    streakPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: isDarkMode ? '#1E293B' : '#FEF3C7',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm - 2,
+      borderRadius: BorderRadius.full,
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#334155' : '#FDE68A',
+    },
+    streakIcon: {
+      fontSize: 15,
+      marginRight: 6,
+    },
+    streakText: {
+      ...Typography.captionBold,
+      color: isDarkMode ? '#FCD34D' : '#92400E',
+    },
+    healthScorePill: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm - 2,
+      borderRadius: BorderRadius.full,
+      borderWidth: 1,
+    },
+    healthScoreHigh: {
+      backgroundColor: isDarkMode ? '#064E3B' : '#ECFDF5',
+      borderColor: isDarkMode ? '#047857' : '#A7F3D0',
+    },
+    healthScoreMid: {
+      backgroundColor: isDarkMode ? '#78350F' : '#FFFBEB',
+      borderColor: isDarkMode ? '#B45309' : '#FDE68A',
+    },
+    healthScoreLow: {
+      backgroundColor: isDarkMode ? '#7F1D1D' : '#FEF2F2',
+      borderColor: isDarkMode ? '#B91C1C' : '#FECACA',
+    },
+    healthScoreEmoji: {
+      fontSize: 13,
+      marginRight: 6,
+    },
+    healthScoreValue: {
+      ...Typography.captionBold,
+      color: theme.textPrimary,
+    },
+    healthScoreSub: {
+      ...Typography.tiny,
+      color: theme.textMuted,
+      marginLeft: 4,
+    },
+    celebrationBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: isDarkMode ? '#064E3B' : '#ECFDF5',
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#047857' : '#10B981',
+      borderRadius: BorderRadius.xl,
+      padding: Spacing.md,
+      marginBottom: Spacing.md,
+    },
+    celebrationEmoji: {
+      fontSize: 22,
+    },
+    celebrationTitle: {
+      ...Typography.bodyBold,
+      color: '#10B981',
+      fontSize: 13,
+    },
+    celebrationDesc: {
+      ...Typography.tiny,
+      color: theme.textMuted,
+      marginTop: 2,
+    },
+    mealsHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      rowGap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    mealsTitleGroup: {
+      flex: 1,
+      minWidth: 160,
+      marginRight: Spacing.xs,
+    },
+    sectionTitle: {
+      ...Typography.h3,
+      color: theme.textPrimary,
+    },
+    mealsSubtitleText: {
+      ...Typography.tiny,
+      color: theme.textMuted,
+      marginTop: 1,
+    },
+    headerButtonsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      flexShrink: 0,
+    },
+    foodSearchBtn: {
+      backgroundColor: theme.primary,
+      paddingHorizontal: Spacing.sm + 2,
+      paddingVertical: 6,
+      borderRadius: BorderRadius.full,
+      ...Shadows.soft,
+    },
+    foodSearchBtnText: {
+      ...Typography.tiny,
+      color: theme.textInverse,
+      fontWeight: '700',
+    },
+    recipeBuilderBtn: {
+      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
+      paddingHorizontal: Spacing.sm + 2,
+      paddingVertical: 6,
+      borderRadius: BorderRadius.full,
+      borderWidth: 1,
+      borderColor: theme.primary,
+    },
+    recipeBuilderBtnText: {
+      ...Typography.tiny,
+      color: isDarkMode ? theme.primary : Colors.primaryDark,
+      fontWeight: '700',
+    },
+    bgAnalysisCard: {
+      backgroundColor: theme.surface,
+      borderRadius: BorderRadius.xl,
+      padding: Spacing.md,
+      marginBottom: Spacing.md,
+      borderWidth: 1.5,
+      borderColor: theme.primary,
+      ...Shadows.card,
+    },
+    bgAnalysisCardReady: {
+      borderColor: '#10B981',
+      backgroundColor: isDarkMode ? '#064E3B20' : '#ECFDF5',
+    },
+    bgAnalysisRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    bgAnalysisThumb: {
+      width: 48,
+      height: 48,
+      borderRadius: BorderRadius.md,
+      marginRight: Spacing.sm,
+    },
+    bgAnalysisThumbPlaceholder: {
+      width: 48,
+      height: 48,
+      borderRadius: BorderRadius.md,
+      backgroundColor: theme.surfaceSubtle,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: Spacing.sm,
+    },
+    bgAnalysisInfo: {
+      flex: 1,
+      marginRight: Spacing.xs,
+    },
+    bgStatusBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 2,
+    },
+    bgAnalysisBadgeText: {
+      ...Typography.tiny,
+      fontSize: 10,
+      fontWeight: '800',
+      color: theme.primary,
+      letterSpacing: 0.5,
+    },
+    bgAnalysisTitle: {
+      ...Typography.bodyBold,
+      fontSize: 13,
+      color: theme.textPrimary,
+    },
+    bgAnalysisSub: {
+      ...Typography.tiny,
+      fontSize: 11,
+      color: theme.textMuted,
+      marginTop: 2,
+    },
+    bgDismissBtn: {
+      padding: Spacing.xs,
+    },
+    bgDismissText: {
+      fontSize: 14,
+      color: theme.textMuted,
+      fontWeight: '700',
+    },
+    bgReviewButton: {
+      backgroundColor: '#10B981',
+      borderRadius: BorderRadius.lg,
+      paddingVertical: Spacing.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: Spacing.sm,
+    },
+    bgReviewButtonText: {
+      ...Typography.captionBold,
+      color: '#FFFFFF',
+      fontWeight: '700',
     },
   });

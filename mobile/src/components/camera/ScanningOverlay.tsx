@@ -33,6 +33,8 @@ export const ScanningOverlay: React.FC<ScanningOverlayProps> = ({
   onRunInBackground,
 }) => {
   const [stageIndex, setStageIndex] = useState(0);
+  const onScanCompleteRef = useRef(onScanComplete);
+  onScanCompleteRef.current = onScanComplete;
 
   // Animated laser scan position (0 -> 1 -> 0)
   const scanAnim = useRef(new Animated.Value(0)).current;
@@ -80,7 +82,7 @@ export const ScanningOverlay: React.FC<ScanningOverlayProps> = ({
     const timer2 = setTimeout(() => setStageIndex(2), 1900); // 3. Stage (%94)
     const timer3 = setTimeout(() => setStageIndex(3), 2900); // 4. Stage (%100)
     const finishTimer = setTimeout(() => {
-      onScanComplete();
+      onScanCompleteRef.current();
     }, 3800); // Completion callback fires 900ms after reaching 100%
 
     return () => {

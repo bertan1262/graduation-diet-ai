@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
 import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
-import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
+import { Spacing, BorderRadius, Typography } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
 
 interface CalorieRingProps {
@@ -10,6 +10,7 @@ interface CalorieRingProps {
   targetCalories: number;
   size?: number;
   strokeWidth?: number;
+  showRemainingPill?: boolean;
 }
 
 export const CalorieRing: React.FC<CalorieRingProps> = ({
@@ -17,11 +18,13 @@ export const CalorieRing: React.FC<CalorieRingProps> = ({
   targetCalories,
   size = 190,
   strokeWidth = 14,
+  showRemainingPill = true,
 }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
 
+  const isCompact = size < 160;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
 
@@ -75,6 +78,7 @@ export const CalorieRing: React.FC<CalorieRingProps> = ({
         <View
           style={[
             styles.percentBadge,
+            isCompact && styles.percentBadgeCompact,
             {
               backgroundColor: isOverTarget
                 ? (isDarkMode ? '#7F1D1D' : '#FEE2E2')
@@ -85,6 +89,7 @@ export const CalorieRing: React.FC<CalorieRingProps> = ({
           <Text
             style={[
               styles.percentText,
+              isCompact && styles.percentTextCompact,
               {
                 color: isOverTarget
                   ? (isDarkMode ? '#FCA5A5' : Colors.danger)
@@ -96,16 +101,25 @@ export const CalorieRing: React.FC<CalorieRingProps> = ({
           </Text>
         </View>
 
-        <Text style={styles.consumedText}>{consumedCalories.toLocaleString('tr-TR')}</Text>
-        <Text style={styles.unitText}>kcal</Text>
+        <Text
+          style={[
+            styles.consumedText,
+            isCompact && styles.consumedTextCompact,
+          ]}
+        >
+          {consumedCalories.toLocaleString('tr-TR')}
+        </Text>
+        <Text style={[styles.unitText, isCompact && styles.unitTextCompact]}>kcal</Text>
 
-        <View style={styles.remainingPill}>
-          <Text style={[styles.remainingText, isOverTarget && styles.remainingOverText]}>
-            {isOverTarget
-              ? `${Math.abs(remainingCalories).toLocaleString('tr-TR')} kcal aşıldı`
-              : `${remainingCalories.toLocaleString('tr-TR')} kcal kaldı`}
-          </Text>
-        </View>
+        {showRemainingPill && !isCompact && (
+          <View style={styles.remainingPill}>
+            <Text style={[styles.remainingText, isOverTarget && styles.remainingOverText]}>
+              {isOverTarget
+                ? `${Math.abs(remainingCalories).toLocaleString('tr-TR')} kcal aşıldı`
+                : `${remainingCalories.toLocaleString('tr-TR')} kcal kaldı`}
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -118,7 +132,7 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       justifyContent: 'center',
       alignItems: 'center',
       position: 'relative',
-      marginVertical: Spacing.sm,
+      marginVertical: Spacing.xs,
     },
     centerContent: {
       position: 'absolute',
@@ -129,11 +143,20 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       paddingHorizontal: Spacing.sm,
       paddingVertical: 2,
       borderRadius: BorderRadius.full,
-      marginBottom: 4,
+      marginBottom: 3,
+    },
+    percentBadgeCompact: {
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+      marginBottom: 1,
     },
     percentText: {
       ...Typography.tiny,
       fontWeight: '700',
+    },
+    percentTextCompact: {
+      fontSize: 10,
+      lineHeight: 12,
     },
     consumedText: {
       fontSize: 32,
@@ -141,11 +164,19 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       color: theme.textPrimary,
       lineHeight: 38,
     },
+    consumedTextCompact: {
+      fontSize: 22,
+      lineHeight: 26,
+    },
     unitText: {
       ...Typography.captionBold,
       color: theme.textMuted,
       marginTop: -2,
       letterSpacing: 0.5,
+    },
+    unitTextCompact: {
+      fontSize: 10,
+      marginTop: -1,
     },
     remainingPill: {
       marginTop: Spacing.xs,

@@ -7,14 +7,17 @@ import {
   PendingMealAnalysis,
   RecognitionResponse,
   CustomRecipe,
-  ProgressPhotoEntry,
   WeeklyWeightEntry,
+  ChatMessage,
+  DailyAnalyticsRecord,
+  DayPlan,
+  MealRecipe,
+  MealType,
 } from '../types';
 import {
   DEFAULT_USER_PROFILE,
   INITIAL_TODAY_MEALS,
   INITIAL_CUSTOM_RECIPES,
-  INITIAL_PROGRESS_PHOTOS,
   INITIAL_WEEKLY_WEIGHT_LOGS,
 } from '../constants/mockData';
 
@@ -40,13 +43,15 @@ interface DietStoreState {
   streakDays: number;
   pendingAnalysis: PendingMealAnalysis;
   customRecipes: CustomRecipe[];
-  progressPhotos: ProgressPhotoEntry[];
   weeklyWeightLogs: WeeklyWeightEntry[];
   useMockData: boolean;
   isDarkMode: boolean;
   hasHydrated: boolean;
   hasCompletedOnboarding: boolean;
   lastActiveDate: string;
+  chatMessages: ChatMessage[];
+  dailyHistory: Record<string, DailyAnalyticsRecord>;
+  customWeekPlan: DayPlan[] | null;
 
   // Actions
   addMeal: (meal: Omit<LoggedMealItem, 'id' | 'loggedAt'>) => void;
@@ -62,8 +67,12 @@ interface DietStoreState {
   setHasHydrated: (state: boolean) => void;
   setHasCompletedOnboarding: (completed: boolean) => void;
   checkAndRollOverDay: () => void;
+  addChatMessage: (message: ChatMessage) => void;
+  clearChatMessages: () => void;
+  setCustomWeekPlan: (plan: DayPlan[]) => void;
+  updateDayMeal: (dayIndex: number, mealType: MealType, meal: MealRecipe) => void;
 
-  // Phase 3 & 4 Actions (Cal AI Background Analysis, Waistline Recipes, Progress Photos)
+  // Phase 3 & 4 Actions (Cal AI Background Analysis, Waistline Recipes, Weight Logs)
   startBackgroundAnalysis: (
     imageUri: string,
     analysisPromise: Promise<RecognitionResponse | void>
@@ -71,13 +80,22 @@ interface DietStoreState {
   clearPendingAnalysis: () => void;
   addCustomRecipe: (recipe: Omit<CustomRecipe, 'id'>) => void;
   removeCustomRecipe: (id: string) => void;
-  addProgressPhoto: (photo: Omit<ProgressPhotoEntry, 'id'>) => void;
   addWeeklyWeightLog: (newWeightKg: number) => void;
   markWeeklyLogCalibrated: (logId: string, newTargetCalories: number) => void;
 
   // Computed helper
   getDailySummary: () => DailySummary;
 }
+
+const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
+  {
+    id: 'msg-welcome',
+    sender: 'assistant',
+    content:
+      'Merhaba! 👋 Ben DietAI yapay zekâ beslenme danışmanınızım.\n\nGünlük hedefleriniz doğrultusunda tabağınızı analiz edebilir, ara öğün önerileri sunabilir veya makro dengenizi optimize edebilirim. Bugün size nasıl yardımcı olabilirim?',
+    timestamp: '09:00',
+  },
+];
 
 export const useDietStore = create<DietStoreState>()(
   persist(
@@ -88,27 +106,75 @@ export const useDietStore = create<DietStoreState>()(
       streakDays: 5,
       pendingAnalysis: { status: 'idle' },
       customRecipes: INITIAL_CUSTOM_RECIPES,
-      progressPhotos: INITIAL_PROGRESS_PHOTOS,
       weeklyWeightLogs: INITIAL_WEEKLY_WEIGHT_LOGS,
       useMockData: true,
       isDarkMode: false,
       hasHydrated: false,
       hasCompletedOnboarding: false,
       lastActiveDate: new Intl.DateTimeFormat('en-CA').format(new Date()),
+      chatMessages: INITIAL_CHAT_MESSAGES,
+      dailyHistory: {},
+      customWeekPlan: null,
 
       toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
       setDarkMode: (enabled) => set({ isDarkMode: enabled }),
       setHasHydrated: (state) => set({ hasHydrated: state }),
       setHasCompletedOnboarding: (completed) => set({ hasCompletedOnboarding: completed }),
+      setCustomWeekPlan: (plan) => set({ customWeekPlan: plan }),
+      updateDayMeal: (dayIndex, mealType, meal) =>
+        set((state) => {
+          if (!state.customWeekPlan) return state;
+          const updated = [...state.customWeekPlan];
+          if (updated[dayIndex]) {
+            updated[dayIndex] = {
+              ...updated[dayIndex],
+              [mealType]: meal,
+            };
+          }
+          return { customWeekPlan: updated };
+        }),
 
       checkAndRollOverDay: () => {
         const todayDate = new Intl.DateTimeFormat('en-CA').format(new Date());
-        const { lastActiveDate, todayMeals, streakDays } = get();
+        const { lastActiveDate, todayMeals, streakDays, dailyHistory, waterIntakeMl, userProfile } = get();
 
-        // If app rolls over to a new calendar date, clear today's meal and water trackers
+        // If app rolls over to a new calendar date, archive yesterday's summary and clear today's active meal and water trackers
         if (lastActiveDate && lastActiveDate !== todayDate) {
-          const nextStreak = todayMeals.length > 0 ? streakDays + 1 : 1;
+          const summary = get().getDailySummary();
+          const prevDayRecord: DailyAnalyticsRecord = {
+            date: lastActiveDate,
+            dayLabel: new Intl.DateTimeFormat('tr-TR', { weekday: 'short' }).format(new Date(lastActiveDate)),
+            calories: summary.totalCalories,
+            targetCalories: userProfile.targetCalories || 2100,
+            proteinGrams: summary.totalProtein,
+            carbsGrams: summary.totalCarbs,
+            fatGrams: summary.totalFat,
+            waterMl: waterIntakeMl,
+            waterGoalMl: userProfile.waterGoalMl || 2500,
+            weightKg: userProfile.weightKg || 76,
+          };
+
+          const updatedHistory = {
+            ...dailyHistory,
+            [lastActiveDate]: prevDayRecord,
+          };
+
+          // Accurate calendar-based streak calculation
+          let daysDiff = 1;
+          try {
+            const d1 = new Date(lastActiveDate);
+            const d2 = new Date(todayDate);
+            const diffMs = Math.abs(d2.getTime() - d1.getTime());
+            daysDiff = Math.round(diffMs / (1000 * 60 * 60 * 24));
+          } catch {
+            daysDiff = 1;
+          }
+
+          // Streak only continues if user logged meals yesterday (daysDiff === 1); otherwise resets
+          const nextStreak = daysDiff === 1 && todayMeals.length > 0 ? streakDays + 1 : 1;
+
           set({
+            dailyHistory: updatedHistory,
             todayMeals: [],
             waterIntakeMl: 0,
             streakDays: nextStreak,
@@ -118,6 +184,16 @@ export const useDietStore = create<DietStoreState>()(
           set({ lastActiveDate: todayDate });
         }
       },
+
+      addChatMessage: (message) =>
+        set((state) => ({
+          chatMessages: [...state.chatMessages, message],
+        })),
+
+      clearChatMessages: () =>
+        set({
+          chatMessages: INITIAL_CHAT_MESSAGES,
+        }),
 
       addMeal: (newMeal) => {
         get().checkAndRollOverDay();
@@ -292,16 +368,6 @@ export const useDietStore = create<DietStoreState>()(
         }));
       },
 
-      addProgressPhoto: (photo) => {
-        const created: ProgressPhotoEntry = {
-          ...photo,
-          id: `prog-${Date.now()}`,
-        };
-        set((state) => ({
-          progressPhotos: [...state.progressPhotos, created],
-        }));
-      },
-
       addWeeklyWeightLog: (newWeightKg) => {
         const { userProfile, weeklyWeightLogs } = get();
         const roundedNew = Math.round(newWeightKg * 10) / 10;
@@ -459,11 +525,14 @@ export const useDietStore = create<DietStoreState>()(
         waterIntakeMl: state.waterIntakeMl,
         streakDays: state.streakDays,
         customRecipes: state.customRecipes,
-        progressPhotos: state.progressPhotos,
+        weeklyWeightLogs: state.weeklyWeightLogs,
         useMockData: state.useMockData,
         isDarkMode: state.isDarkMode,
         hasCompletedOnboarding: state.hasCompletedOnboarding,
         lastActiveDate: state.lastActiveDate,
+        chatMessages: state.chatMessages,
+        dailyHistory: state.dailyHistory,
+        customWeekPlan: state.customWeekPlan,
       }),
     }
   )

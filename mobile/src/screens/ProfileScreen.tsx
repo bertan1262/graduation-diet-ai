@@ -9,6 +9,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import Svg, { Line, Polyline, Circle as SvgCircle } from 'react-native-svg';
 import { Colors, getThemeColors, ThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useDietStore } from '../store/useDietStore';
@@ -16,23 +17,48 @@ import { apiService } from '../services/api';
 import { OnboardingScreen } from './OnboardingScreen';
 
 export const ProfileScreen: React.FC = () => {
-  const {
-    userProfile,
-    updateProfile,
-    weeklyWeightLogs,
-    addWeeklyWeightLog,
-    markWeeklyLogCalibrated,
-    useMockData,
-    setUseMockData,
-    resetDay,
-    isDarkMode,
-    setHasCompletedOnboarding,
-  } = useDietStore();
+  const userProfile = useDietStore((state) => state.userProfile);
+  const updateProfile = useDietStore((state) => state.updateProfile);
+  const weeklyWeightLogs = useDietStore((state) => state.weeklyWeightLogs);
+  const addWeeklyWeightLog = useDietStore((state) => state.addWeeklyWeightLog);
+  const markWeeklyLogCalibrated = useDietStore((state) => state.markWeeklyLogCalibrated);
+  const useMockData = useDietStore((state) => state.useMockData);
+  const setUseMockData = useDietStore((state) => state.setUseMockData);
+  const resetDay = useDietStore((state) => state.resetDay);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const setHasCompletedOnboarding = useDietStore((state) => state.setHasCompletedOnboarding);
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
   const [isEditing, setIsEditing] = useState(false);
+  const [isClinicalExpanded, setIsClinicalExpanded] = useState(false);
   const [weeklyInputKg, setWeeklyInputKg] = useState(String(userProfile.weightKg));
   const apiConfig = apiService.getConfig();
+
+  // Weekly Weight Sparkline Data
+  const sparklineData = useMemo(() => {
+    if (weeklyWeightLogs.length < 2) return null;
+    const weights = weeklyWeightLogs.map((l) => l.weightKg);
+    const minW = Math.min(...weights);
+    const maxW = Math.max(...weights);
+    const range = Math.max(0.5, maxW - minW);
+
+    const width = 280;
+    const height = 48;
+    const paddingX = 14;
+    const paddingY = 8;
+    const availableW = width - paddingX * 2;
+    const availableH = height - paddingY * 2;
+
+    const stepX = availableW / (weights.length - 1);
+    const points = weights.map((w, i) => {
+      const x = paddingX + i * stepX;
+      const y = paddingY + availableH - ((w - minW) / range) * availableH;
+      return { x, y };
+    });
+
+    const pointsStr = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    return { points: pointsStr, dots: points };
+  }, [weeklyWeightLogs]);
 
   useEffect(() => {
     setWeeklyInputKg(String(userProfile.weightKg));
@@ -418,6 +444,33 @@ export const ProfileScreen: React.FC = () => {
           </View>
         </View>
 
+        {/* Visual Color-Coded Horizontal BMI Gauge */}
+        <View style={styles.bmiGaugeContainer}>
+          <View style={styles.bmiTrack}>
+            <View style={[styles.bmiSegment, { flex: 3.5, backgroundColor: '#3B82F6' }]} />
+            <View style={[styles.bmiSegment, { flex: 6.5, backgroundColor: '#10B981' }]} />
+            <View style={[styles.bmiSegment, { flex: 5.0, backgroundColor: '#F59E0B' }]} />
+            <View style={[styles.bmiSegment, { flex: 5.0, backgroundColor: '#EF4444' }]} />
+            <View
+              style={[
+                styles.bmiNeedle,
+                {
+                  left: `${Math.min(96, Math.max(4, ((bmiData.bmi - 15) / 20) * 100))}%`,
+                  backgroundColor: bmiData.color,
+                },
+              ]}
+            />
+          </View>
+          <View style={styles.bmiLabelsRow}>
+            <Text style={styles.bmiLabelText}>Düşük (&lt;18.5)</Text>
+            <Text style={[styles.bmiLabelText, { color: '#10B981', fontWeight: '700' }]}>
+              İdeal (18.5 - 24.9)
+            </Text>
+            <Text style={styles.bmiLabelText}>Kilolu (25 - 29.9)</Text>
+            <Text style={styles.bmiLabelText}>Obez (&ge;30)</Text>
+          </View>
+        </View>
+
         {/* Single Clean Edit Button */}
         <TouchableOpacity
           style={styles.editProfileButton}
@@ -518,6 +571,75 @@ export const ProfileScreen: React.FC = () => {
                 </Text>
               </View>
             )}
+          </View>
+        )}
+
+        {/* Visual Mini Trend Sparkline */}
+        {sparklineData && (
+          <View style={styles.sparklineCard}>
+            <View style={styles.sparklineHeader}>
+              <Text style={styles.sparklineTitle}>📈 Kilo Değişim Trendi</Text>
+              <Text
+                style={[
+                  styles.sparklineDelta,
+                  {
+                    color:
+                      weeklyWeightLogs[weeklyWeightLogs.length - 1].weightKg <=
+                      weeklyWeightLogs[0].weightKg
+                        ? theme.primary
+                        : theme.danger,
+                  },
+                ]}
+              >
+                {(
+                  weeklyWeightLogs[weeklyWeightLogs.length - 1].weightKg -
+                  weeklyWeightLogs[0].weightKg
+                ).toFixed(1)}{' '}
+                kg değişim
+              </Text>
+            </View>
+
+            <View style={styles.sparklineSvgWrapper}>
+              <Svg height={48} width="100%" viewBox="0 0 280 48">
+                <Line
+                  x1="0"
+                  y1="24"
+                  x2="280"
+                  y2="24"
+                  stroke={theme.border}
+                  strokeDasharray="4 4"
+                  strokeWidth="1"
+                />
+                <Polyline
+                  points={sparklineData.points}
+                  fill="none"
+                  stroke={theme.primary}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                {sparklineData.dots.map((dot, idx) => (
+                  <SvgCircle
+                    key={`dot-${idx}`}
+                    cx={dot.x}
+                    cy={dot.y}
+                    r="4"
+                    fill={idx === sparklineData.dots.length - 1 ? theme.primary : theme.surface}
+                    stroke={theme.primary}
+                    strokeWidth="2"
+                  />
+                ))}
+              </Svg>
+            </View>
+
+            <View style={styles.sparklineFooter}>
+              <Text style={styles.sparklineFooterText}>
+                İlk Tartım: {weeklyWeightLogs[0].weightKg} kg
+              </Text>
+              <Text style={[styles.sparklineFooterText, { color: theme.primary, fontWeight: '700' }]}>
+                Son Tartım: {weeklyWeightLogs[weeklyWeightLogs.length - 1].weightKg} kg
+              </Text>
+            </View>
           </View>
         )}
 
@@ -648,7 +770,7 @@ export const ProfileScreen: React.FC = () => {
 
       {/* Target Macros & Nutrition Plan */}
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>⚡ Klinik Metabolizma & BMR Telemetrisi</Text>
+        <Text style={styles.sectionTitle}>⚡ Metabolizma & Günlük Hedefler</Text>
 
         <View style={styles.row}>
           <Text style={styles.rowLabel}>Günlük Kalori Hedefi</Text>
@@ -659,34 +781,18 @@ export const ProfileScreen: React.FC = () => {
         <View style={styles.divider} />
 
         <View style={styles.row}>
-          <Text style={styles.rowLabel}>Klinik BMR Formülü</Text>
-          <Text style={[styles.rowValue, { color: theme.primary }]}>
-            {userProfile.bmrFormulaUsed === 'mifflin_st_jeor'
-              ? 'Mifflin-St Jeor (BMI > 30)'
-              : 'Revised Harris-Benedict (BMI ≤ 30)'}
-          </Text>
-        </View>
-        <View style={styles.divider} />
-
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Hesaplama Dayanağı</Text>
+          <Text style={styles.rowLabel}>Bazal & Toplam Harcama</Text>
           <Text style={styles.rowValue}>
-            {userProfile.calculationBasis === 'ideal'
-              ? '🎯 İdeal Kilo Bazlı'
-              : '⚖️ Mevcut Kilo Bazlı'}
+            BMR: {userProfile.bmr} kcal • TDEE: {userProfile.tdee} kcal
           </Text>
         </View>
         <View style={styles.divider} />
 
         <View style={styles.row}>
-          <Text style={styles.rowLabel}>BMR (Bazal Metabolizma)</Text>
-          <Text style={styles.rowValue}>{userProfile.bmr} kcal</Text>
-        </View>
-        <View style={styles.divider} />
-
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>TDEE (Toplam Harcama)</Text>
-          <Text style={styles.rowValue}>{userProfile.tdee} kcal</Text>
+          <Text style={styles.rowLabel}>Birincil Hedef</Text>
+          <Text style={[styles.rowValue, { color: theme.primary }]}>
+            {getGoalLabel(userProfile.dietaryGoal)}
+          </Text>
         </View>
         <View style={styles.divider} />
 
@@ -748,39 +854,71 @@ export const ProfileScreen: React.FC = () => {
               )}
           </View>
         </View>
-        <View style={styles.divider} />
 
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Aktivite Seviyesi</Text>
-          <Text style={styles.rowValue}>{getActivityLabel(userProfile.activityLevel)}</Text>
-        </View>
-        <View style={styles.divider} />
-
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Birincil Hedef</Text>
-          <Text style={[styles.rowValue, { color: theme.primary }]}>
-            {getGoalLabel(userProfile.dietaryGoal)}
+        {/* Expandable Clinical Details Accordion */}
+        <TouchableOpacity
+          style={styles.clinicalAccordionToggle}
+          onPress={() => setIsClinicalExpanded((prev) => !prev)}
+          activeOpacity={0.75}
+        >
+          <View style={styles.clinicalAccordionTitleGroup}>
+            <Text style={styles.clinicalAccordionIcon}>🔬</Text>
+            <Text style={styles.clinicalAccordionTitle}>
+              Gelişmiş Formül & Hesaplama Detayları
+            </Text>
+          </View>
+          <Text style={styles.clinicalAccordionChevron}>
+            {isClinicalExpanded ? '▴ Gizle' : '▾ Göster'}
           </Text>
-        </View>
-        <View style={styles.divider} />
+        </TouchableOpacity>
 
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Günlük Öğün & Saat Aralığı</Text>
-          <Text style={styles.rowValue}>
-            🍽️ {userProfile.dailyMealsCount || 3} Öğün ({userProfile.firstMealTime || '09:00'} –{' '}
-            {userProfile.lastMealTime || '19:00'})
-          </Text>
-        </View>
-        <View style={styles.divider} />
+        {isClinicalExpanded && (
+          <View style={styles.clinicalDrawer}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Klinik BMR Formülü</Text>
+              <Text style={[styles.rowValue, { color: theme.primary }]}>
+                {userProfile.bmrFormulaUsed === 'mifflin_st_jeor'
+                  ? 'Mifflin-St Jeor (BMI > 30)'
+                  : 'Revised Harris-Benedict (BMI ≤ 30)'}
+              </Text>
+            </View>
+            <View style={styles.divider} />
 
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Hafta Sonu Esnekliği</Text>
-          <Text style={styles.rowValue}>
-            {userProfile.weekendFlexibility !== false
-              ? '😋 Cumartesi & Pazar Aktif'
-              : 'Standart Sabit Plan'}
-          </Text>
-        </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Hesaplama Dayanağı</Text>
+              <Text style={styles.rowValue}>
+                {userProfile.calculationBasis === 'ideal'
+                  ? '🎯 İdeal Kilo Bazlı'
+                  : '⚖️ Mevcut Kilo Bazlı'}
+              </Text>
+            </View>
+            <View style={styles.divider} />
+
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Aktivite Katsayısı (PAL)</Text>
+              <Text style={styles.rowValue}>{getActivityLabel(userProfile.activityLevel)}</Text>
+            </View>
+            <View style={styles.divider} />
+
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Günlük Öğün & Saat Aralığı</Text>
+              <Text style={styles.rowValue}>
+                🍽️ {userProfile.dailyMealsCount || 3} Öğün ({userProfile.firstMealTime || '09:00'} –{' '}
+                {userProfile.lastMealTime || '19:00'})
+              </Text>
+            </View>
+            <View style={styles.divider} />
+
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Hafta Sonu Esnekliği</Text>
+              <Text style={styles.rowValue}>
+                {userProfile.weekendFlexibility !== false
+                  ? '😋 Cumartesi & Pazar Aktif'
+                  : 'Standart Sabit Plan'}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Macro Distribution Pills */}
         <View style={styles.macroRow}>
@@ -1470,5 +1608,122 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       ...Typography.tiny,
       color: theme.textMuted,
       marginTop: 4,
+    },
+    /* BMI Gauge Styles */
+    bmiGaugeContainer: {
+      marginTop: Spacing.md,
+      paddingTop: Spacing.sm,
+      borderTopWidth: 1,
+      borderTopColor: theme.border,
+    },
+    bmiTrack: {
+      height: 8,
+      borderRadius: BorderRadius.full,
+      flexDirection: 'row',
+      overflow: 'visible',
+      position: 'relative',
+      marginBottom: Spacing.xs,
+    },
+    bmiSegment: {
+      height: '100%',
+      borderRadius: 2,
+      marginHorizontal: 1,
+    },
+    bmiNeedle: {
+      position: 'absolute',
+      top: -4,
+      width: 14,
+      height: 16,
+      borderRadius: 7,
+      borderWidth: 2,
+      borderColor: theme.surface,
+      marginLeft: -7,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.2,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    bmiLabelsRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: Spacing.xs,
+    },
+    bmiLabelText: {
+      ...Typography.tiny,
+      color: theme.textMuted,
+      fontSize: 10,
+    },
+    /* Sparkline Weight Trend Styles */
+    sparklineCard: {
+      backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.03)' : theme.surfaceSubtle,
+      borderRadius: BorderRadius.md,
+      padding: Spacing.md,
+      borderWidth: 1,
+      borderColor: theme.border,
+      marginBottom: Spacing.md,
+    },
+    sparklineHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: Spacing.xs,
+    },
+    sparklineTitle: {
+      ...Typography.captionBold,
+      color: theme.textSecondary,
+    },
+    sparklineDelta: {
+      ...Typography.captionBold,
+    },
+    sparklineSvgWrapper: {
+      marginVertical: Spacing.xs,
+      alignItems: 'center',
+    },
+    sparklineFooter: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: Spacing.xs,
+    },
+    sparklineFooterText: {
+      ...Typography.tiny,
+      color: theme.textMuted,
+    },
+    /* Clinical Accordion Styles */
+    clinicalAccordionToggle: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+      backgroundColor: theme.surfaceSubtle,
+      borderRadius: BorderRadius.md,
+      marginTop: Spacing.sm,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    clinicalAccordionTitleGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.xs,
+    },
+    clinicalAccordionIcon: {
+      fontSize: 14,
+    },
+    clinicalAccordionTitle: {
+      ...Typography.captionBold,
+      color: theme.textPrimary,
+    },
+    clinicalAccordionChevron: {
+      ...Typography.captionBold,
+      color: theme.primary,
+    },
+    clinicalDrawer: {
+      marginTop: Spacing.sm,
+      padding: Spacing.md,
+      backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.02)' : theme.surfaceSubtle,
+      borderRadius: BorderRadius.md,
+      borderWidth: 1,
+      borderColor: theme.border,
     },
   });

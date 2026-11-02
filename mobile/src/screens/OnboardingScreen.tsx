@@ -12,316 +12,26 @@ import {
   Animated,
 } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors, ThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useDietStore } from '../store/useDietStore';
 import { UserProfile, CalculationBasis } from '../types';
 import { apiService } from '../services/api';
+import { DraggableRuler } from '../components/onboarding/DraggableRuler';
+import {
+  ALLERGY_OPTIONS,
+  DIET_TYPES,
+  OBSTACLE_OPTIONS,
+  PACE_OPTIONS,
+  FIRST_MEAL_TIMES,
+  LAST_MEAL_TIMES,
+  OnboardingStage,
+  TOTAL_WIZARD_STEPS,
+  ONBOARDING_PHASES,
+} from '../components/onboarding/OnboardingConstants';
 
-export const ALLERGY_OPTIONS = [
-  { id: '🥜 Fıstık (Hafif)', label: 'Fıstık / Kuruyemiş', emoji: '🥜' },
-  { id: '🥛 Laktoz (Düşük Tolerans)', label: 'Laktoz', emoji: '🥛' },
-  { id: '🌾 Gluten Hassasiyeti', label: 'Glüten', emoji: '🌾' },
-  { id: '🌱 Vejetaryen', label: 'Vejetaryen', emoji: '🌱' },
-  { id: '🥑 Ketojenik', label: 'Ketojenik / Düşük Karb', emoji: '🥑' },
-  { id: '🦐 Deniz Ürünleri', label: 'Deniz Ürünleri', emoji: '🦐' },
-  { id: '🥚 Yumurta Hassasiyeti', label: 'Yumurta', emoji: '🥚' },
-];
-
-const DIET_TYPES = [
-  {
-    id: 'balanced',
-    title: 'Dengeli',
-    subtitle: 'Karbonhidrat (%40), protein (%30) ve yağ (%30) dengesi',
-    emoji: '🥗',
-    macros: { p: 0.3, c: 0.4, f: 0.3 },
-  },
-  {
-    id: 'high_protein',
-    title: 'Yüksek Protein',
-    subtitle: 'Kas kazanımı ve korunumu için ekstra protein (%35 P / %40 K / %25 Y)',
-    emoji: '🥩',
-    macros: { p: 0.35, c: 0.4, f: 0.25 },
-  },
-  {
-    id: 'low_carb',
-    title: 'Düşük Karbonhidrat',
-    subtitle: 'Daha az karbonhidrat, daha çok protein ve sağlıklı yağ (%35 P / %25 K / %40 Y)',
-    emoji: '🥦',
-    macros: { p: 0.35, c: 0.25, f: 0.4 },
-  },
-  {
-    id: 'keto',
-    title: 'Ketojenik',
-    subtitle: 'Çok düşük karbonhidrat, yüksek yağ (%25 P / %10 K / %65 Y)',
-    emoji: '🥑',
-    macros: { p: 0.25, c: 0.1, f: 0.65 },
-  },
-  {
-    id: 'mediterranean',
-    title: 'Akdeniz Tipi',
-    subtitle: 'Sebze, tam tahıl ve zeytinyağı ağırlıklı (%25 P / %45 K / %30 Y)',
-    emoji: '🫒',
-    macros: { p: 0.25, c: 0.45, f: 0.3 },
-  },
-];
-
-const OBSTACLE_OPTIONS = [
-  { id: 'Çikolata ve şekerlemeyi çok seviyorum', emoji: '🍫', label: 'Çikolata ve şekerlemeyi çok seviyorum' },
-  { id: 'Gece geç saatlerde atıştırmak', emoji: '🌙', label: 'Gece geç saatlerde atıştırmak' },
-  { id: 'Abur cubur benim zayıf noktam', emoji: '🍟', label: 'Abur cubur benim zayıf noktam' },
-  { id: 'Yoğun bir program', emoji: '⏰', label: 'Yoğun bir program ve düzensiz öğünler' },
-  { id: 'Destek ve motivasyon eksikliği', emoji: '🤝', label: 'Destek ve motivasyon eksikliği' },
-];
-
-const PACE_OPTIONS = [
-  { value: 0.2, label: 'Yavaş', animal: '🦥', desc: 'Esnek ve yumuşak geçiş' },
-  { value: 0.5, label: 'Önerilen', animal: '🐇', desc: 'İdeal ve sürdürülebilir tempo' },
-  { value: 0.8, label: 'Hızlı', animal: '🐆', desc: 'Disiplinli ve yoğun program' },
-];
-
-const FIRST_MEAL_TIMES = ['07:30', '08:30', '09:00', '10:00', '11:00'];
-const LAST_MEAL_TIMES = ['18:00', '19:00', '20:00', '21:00', '22:00'];
-
-type OnboardingStage = 'welcome' | 'wizard' | 'calculating' | 'summary';
-
-const TOTAL_WIZARD_STEPS = 6;
-
-interface DraggableRulerProps {
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  unit: string;
-  theme: ThemeColors;
-  onChange: (newValStr: string) => void;
-  onDragStateChange?: (dragging: boolean) => void;
-}
-
-/**
- * Smooth Interactive Tape-Measure Horizontal Ruler (Cal AI / Calz Style)
- * Swiping LEFT (-dx) increases the value; swiping RIGHT (+dx) decreases the value.
- * Uses continuous sub-pixel Animated translation for 60fps fluid gliding.
- */
-const TICK_SLOT_WIDTH = 12;
-
-const DraggableRuler: React.FC<DraggableRulerProps> = ({
-  value,
-  min,
-  max,
-  step,
-  unit,
-  theme,
-  onChange,
-  onDragStateChange,
-}) => {
-  const latestValueRef = useRef(value);
-  latestValueRef.current = value;
-
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-
-  const onDragStateRef = useRef(onDragStateChange);
-  onDragStateRef.current = onDragStateChange;
-
-  const startValueRef = useRef(value);
-  const lastEmittedStrRef = useRef(
-    step < 1 ? value.toFixed(1) : String(Math.round(value))
-  );
-  const subPixelAnim = useRef(new Animated.Value(0)).current;
-  const [isDragging, setIsDragging] = useState(false);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dx) > 1.5,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        startValueRef.current = latestValueRef.current;
-        lastEmittedStrRef.current =
-          step < 1
-            ? latestValueRef.current.toFixed(1)
-            : String(Math.round(latestValueRef.current));
-        subPixelAnim.setValue(0);
-        setIsDragging(true);
-        onDragStateRef.current?.(true);
-      },
-      onPanResponderMove: (_, gestureState) => {
-        // Natural tape-measure direction:
-        // Dragging LEFT (-dx) pulls higher values from the right -> INCREASES value
-        // Dragging RIGHT (+dx) pulls lower values from the left -> DECREASES value
-        const exactStepsDelta = -gestureState.dx / TICK_SLOT_WIDTH;
-        const exactNext = Math.max(
-          min,
-          Math.min(max, startValueRef.current + exactStepsDelta * step)
-        );
-
-        const snappedStepsFromMin = Math.round((exactNext - min) / step);
-        const snappedVal = Math.max(
-          min,
-          Math.min(max, min + snappedStepsFromMin * step)
-        );
-
-        // Continuous sub-step remainder in [-0.5, +0.5] steps -> pixel shift
-        const remainderSteps = (exactNext - snappedVal) / step;
-        subPixelAnim.setValue(-remainderSteps * TICK_SLOT_WIDTH);
-
-        const formatted =
-          step < 1
-            ? Number(snappedVal.toFixed(1)).toString()
-            : String(Math.round(snappedVal));
-
-        if (formatted !== lastEmittedStrRef.current) {
-          lastEmittedStrRef.current = formatted;
-          onChangeRef.current(formatted);
-        }
-      },
-      onPanResponderRelease: () => {
-        setIsDragging(false);
-        onDragStateRef.current?.(false);
-        Animated.spring(subPixelAnim, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 28,
-          bounciness: 4,
-        }).start();
-      },
-      onPanResponderTerminate: () => {
-        setIsDragging(false);
-        onDragStateRef.current?.(false);
-        Animated.spring(subPixelAnim, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 28,
-          bounciness: 4,
-        }).start();
-      },
-    })
-  ).current;
-
-  // Generate 29 ticks centered around current value
-  const totalTicks = 29;
-  const centerIdx = 14;
-
-  return (
-    <View
-      {...panResponder.panHandlers}
-      style={{
-        marginTop: Spacing.xs,
-        paddingVertical: Spacing.sm,
-        paddingHorizontal: Spacing.sm,
-        borderRadius: BorderRadius.lg,
-        backgroundColor: theme.surfaceSubtle,
-        borderWidth: 1.5,
-        borderColor: isDragging ? theme.primary : theme.border,
-        overflow: 'hidden',
-      }}
-    >
-      {/* Center Pointer Triangle */}
-      <View style={{ alignItems: 'center', marginBottom: 2 }}>
-        <Text style={{ fontSize: 10, color: theme.primary, fontWeight: '900' }}>
-          ▼
-        </Text>
-      </View>
-
-      {/* Smooth Gliding Tick Strip with Fixed Center Indicator */}
-      <View
-        style={{
-          height: 32,
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          overflow: 'hidden',
-          position: 'relative',
-        }}
-      >
-        <Animated.View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'flex-end',
-            height: 30,
-            transform: [{ translateX: subPixelAnim }],
-          }}
-        >
-          {Array.from({ length: totalTicks }).map((_, idx) => {
-            const offsetSteps = idx - centerIdx;
-            const tickVal = Math.round((value + offsetSteps * step) * 10) / 10;
-            const outOfBounds = tickVal < min || tickVal > max;
-            const numericTickIndex = Math.round(tickVal / step);
-            const isTenMajor = numericTickIndex % 10 === 0;
-            const isFiveMajor = numericTickIndex % 5 === 0;
-
-            return (
-              <View
-                key={idx}
-                style={{
-                  width: TICK_SLOT_WIDTH,
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                  height: 30,
-                  opacity: outOfBounds ? 0.18 : 1,
-                }}
-              >
-                <View
-                  style={{
-                    width: isTenMajor ? 2.5 : isFiveMajor ? 2 : 1.5,
-                    height: isTenMajor ? 22 : isFiveMajor ? 16 : 10,
-                    backgroundColor: isTenMajor
-                      ? theme.textPrimary
-                      : isFiveMajor
-                      ? theme.textSecondary
-                      : theme.border,
-                    borderRadius: 2,
-                  }}
-                />
-              </View>
-            );
-          })}
-        </Animated.View>
-
-        {/* Fixed Center Indicator Needle */}
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            width: 3.5,
-            height: 29,
-            borderRadius: 2,
-            backgroundColor: theme.primary,
-          }}
-        />
-      </View>
-
-      {/* Dynamic Scale Labels Under Ruler */}
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          paddingHorizontal: 2,
-          marginTop: 5,
-        }}
-      >
-        <Text style={{ ...Typography.tiny, fontSize: 10, color: theme.textMuted }}>
-          {Math.max(min, Math.round((value - step * 10) * 10) / 10)} {unit}
-        </Text>
-        <Text
-          style={{
-            ...Typography.tiny,
-            fontSize: 10,
-            fontWeight: '700',
-            color: isDragging ? theme.primary : theme.textSecondary,
-          }}
-        >
-          ← Sola Kaydır (+) • Sağa Kaydır (−) →
-        </Text>
-        <Text style={{ ...Typography.tiny, fontSize: 10, color: theme.textMuted }}>
-          {Math.min(max, Math.round((value + step * 10) * 10) / 10)} {unit}
-        </Text>
-      </View>
-    </View>
-  );
-};
+export { ALLERGY_OPTIONS };
 
 interface OnboardingScreenProps {
   onComplete?: () => void;
@@ -332,7 +42,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   onComplete,
   isEditing = false,
 }) => {
-  const { userProfile, updateProfile, isDarkMode, toggleDarkMode } = useDietStore();
+  const userProfile = useDietStore((state) => state.userProfile);
+  const updateProfile = useDietStore((state) => state.updateProfile);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const toggleDarkMode = useDietStore((state) => state.toggleDarkMode);
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
 
@@ -341,6 +54,11 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   const [step, setStep] = useState<number>(0);
   const [calcProgress, setCalcProgress] = useState<number>(0);
   const [isDraggingRuler, setIsDraggingRuler] = useState<boolean>(false);
+
+  const currentPhase = useMemo(
+    () => ONBOARDING_PHASES.find((p) => p.steps.includes(step)) || ONBOARDING_PHASES[0],
+    [step]
+  );
 
   // Form State initialized with current user profile or standard defaults
   const [name, setName] = useState(userProfile.name || 'Bertan Beyal');
@@ -732,11 +450,13 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
     });
 
     if (onComplete) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       onComplete();
     }
   };
 
   const handleNextStep = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     if (step < TOTAL_WIZARD_STEPS - 1) {
       setStep(step + 1);
     } else {
@@ -745,6 +465,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   };
 
   const handleBackStep = () => {
+    Haptics.selectionAsync().catch(() => {});
     if (step > 0) {
       setStep(step - 1);
     } else if (!isEditing) {
@@ -1229,7 +950,37 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       style={styles.wizardWrapper}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Top Navigation & Animated Progress Bar (Cal AI & Calz Style) */}
+      {/* 3 Thematic Phase Chapters (Phase 1: Fiziksel, Phase 2: Aktivite & Hedef, Phase 3: Sağlık) */}
+      <View style={styles.phaseHeaderRow}>
+        {ONBOARDING_PHASES.map((p) => {
+          const isCurrent = p.id === currentPhase.id;
+          const isCompleted = step > Math.max(...p.steps);
+          return (
+            <View
+              key={p.id}
+              style={[
+                styles.phasePill,
+                isCurrent && styles.phasePillActive,
+                isCompleted && styles.phasePillCompleted,
+              ]}
+            >
+              <Text style={styles.phasePillEmoji}>{isCompleted ? '✓' : p.emoji}</Text>
+              <Text
+                style={[
+                  styles.phasePillText,
+                  isCurrent && styles.phasePillTextActive,
+                  isCompleted && styles.phasePillTextCompleted,
+                ]}
+                numberOfLines={1}
+              >
+                {p.title}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Top Navigation & Segmented Progress Bar */}
       <View style={styles.wizardTopBar}>
         <TouchableOpacity
           style={styles.wizardBackBtn}
@@ -1239,14 +990,43 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
           <Text style={styles.wizardBackArrow}>←</Text>
         </TouchableOpacity>
 
-        <View style={styles.wizardProgressTrack}>
-          <View
-            style={[styles.wizardProgressFill, { width: `${progressPercent}%` }]}
-          />
+        {/* 3-Segment Segmented Progress Track */}
+        <View style={styles.segmentedProgressRow}>
+          {ONBOARDING_PHASES.map((p) => {
+            const phaseStepMin = Math.min(...p.steps);
+            const phaseStepMax = Math.max(...p.steps);
+            let fillPercent = 0;
+            if (step > phaseStepMax) {
+              fillPercent = 100;
+            } else if (step >= phaseStepMin) {
+              const relativeStep = step - phaseStepMin + 1;
+              const totalInPhase = phaseStepMax - phaseStepMin + 1;
+              fillPercent = (relativeStep / totalInPhase) * 100;
+            }
+
+            return (
+              <View key={`prog-${p.id}`} style={styles.segmentTrack}>
+                <View
+                  style={[
+                    styles.segmentFill,
+                    {
+                      width: `${fillPercent}%`,
+                      backgroundColor:
+                        fillPercent === 100
+                          ? theme.primary
+                          : isDarkMode
+                          ? '#60A5FA'
+                          : '#0F172A',
+                    },
+                  ]}
+                />
+              </View>
+            );
+          })}
         </View>
 
         <Text style={styles.wizardStepCounter}>
-          {step + 1}/{TOTAL_WIZARD_STEPS}
+          Faz {currentPhase.id}/3 • {step + 1}/{TOTAL_WIZARD_STEPS}
         </Text>
       </View>
 
@@ -2302,7 +2082,11 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
           <Text style={styles.wizardContinueText}>
             {step === TOTAL_WIZARD_STEPS - 1
               ? 'Kişisel Sağlık Planımı Oluştur ✨'
-              : 'İleri'}
+              : step === 1
+              ? 'Devam Et: Aktivite & Hedef →'
+              : step === 3
+              ? 'Devam Et: Sağlık & Beslenme →'
+              : 'İleri →'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -2610,12 +2394,75 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       flex: 1,
       backgroundColor: theme.background,
     },
+    phaseHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: Spacing.lg,
+      paddingTop: Spacing.md,
+      gap: 6,
+    },
+    phasePill: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 6,
+      paddingHorizontal: 4,
+      borderRadius: BorderRadius.full,
+      backgroundColor: theme.surfaceSubtle,
+      borderWidth: 1,
+      borderColor: theme.border,
+      gap: 4,
+    },
+    phasePillActive: {
+      backgroundColor: isDarkMode ? '#1E293B' : Colors.primaryLight,
+      borderColor: theme.primary,
+    },
+    phasePillCompleted: {
+      backgroundColor: isDarkMode ? '#064E3B' : '#ECFDF5',
+      borderColor: isDarkMode ? '#047857' : '#A7F3D0',
+    },
+    phasePillEmoji: {
+      fontSize: 11,
+    },
+    phasePillText: {
+      ...Typography.tiny,
+      fontSize: 10,
+      color: theme.textMuted,
+      fontWeight: '600',
+    },
+    phasePillTextActive: {
+      color: isDarkMode ? theme.primary : Colors.primaryDark,
+      fontWeight: '700',
+    },
+    phasePillTextCompleted: {
+      color: isDarkMode ? '#6EE7B7' : '#047857',
+      fontWeight: '700',
+    },
     wizardTopBar: {
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: Spacing.lg,
-      paddingVertical: Spacing.md,
+      paddingVertical: Spacing.sm + 2,
       gap: Spacing.md,
+    },
+    segmentedProgressRow: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    segmentTrack: {
+      flex: 1,
+      height: 6,
+      backgroundColor: theme.border,
+      borderRadius: BorderRadius.full,
+      overflow: 'hidden',
+    },
+    segmentFill: {
+      height: '100%',
+      borderRadius: BorderRadius.full,
     },
     wizardBackBtn: {
       width: 38,
@@ -2648,7 +2495,7 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       ...Typography.tiny,
       fontWeight: '700',
       color: theme.textMuted,
-      minWidth: 28,
+      minWidth: 40,
       textAlign: 'right',
     },
     wizardScrollContent: {

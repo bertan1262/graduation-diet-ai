@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,36 +7,11 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useDietStore } from '../store/useDietStore';
-import { MealType } from '../types';
-
-export interface MealRecipe {
-  id: string;
-  title: string;
-  description: string;
-  calories: number;
-  proteinGrams: number;
-  carbsGrams: number;
-  fatGrams: number;
-  tags: string[];
-  allergens?: ('lactose' | 'gluten' | 'peanut' | 'egg' | 'seafood')[];
-  dietTypes?: ('vegetarian' | 'vegan' | 'keto' | 'balanced' | 'high_protein')[];
-}
-
-export interface DayPlan {
-  dayId: string;
-  dayName: string;
-  dayShort: string;
-  dayOfMonth: number;
-  monthName: string;
-  isToday: boolean;
-  breakfast: MealRecipe;
-  lunch: MealRecipe;
-  dinner: MealRecipe;
-  snack: MealRecipe;
-}
+import { MealType, MealRecipe, DayPlan } from '../types';
 
 // Comprehensive alternative recipes pool categorized with allergens and dietary types
 export const ALTERNATIVE_MEALS: Record<MealType, MealRecipe[]> = {
@@ -373,6 +348,33 @@ export function isMealSafeForProfile(
 }
 
 /**
+ * Returns specific allergen conflicts between a recipe and user's declared allergies.
+ */
+export function getAllergenWarnings(meal: MealRecipe, userAllergies: string[] = []): string[] {
+  if (!userAllergies || userAllergies.length === 0 || !meal.allergens) return [];
+  const allergyLower = userAllergies.join(' ').toLowerCase();
+  const warnings: string[] = [];
+
+  if ((allergyLower.includes('laktoz') || allergyLower.includes('lactose')) && meal.allergens.includes('lactose')) {
+    warnings.push('Laktoz (Süt)');
+  }
+  if (allergyLower.includes('gluten') && meal.allergens.includes('gluten')) {
+    warnings.push('Gluten (Buğday)');
+  }
+  if ((allergyLower.includes('fıstık') || allergyLower.includes('peanut') || allergyLower.includes('kuruyemiş')) && meal.allergens.includes('peanut')) {
+    warnings.push('Fıstık / Kuruyemiş');
+  }
+  if ((allergyLower.includes('deniz') || allergyLower.includes('seafood')) && meal.allergens.includes('seafood')) {
+    warnings.push('Deniz Ürünü');
+  }
+  if ((allergyLower.includes('yumurta') || allergyLower.includes('egg')) && meal.allergens.includes('egg')) {
+    warnings.push('Yumurta');
+  }
+
+  return warnings;
+}
+
+/**
  * Generates a dynamic 7-day meal plan strictly filtered against user's allergies and preferences,
  * with real calendar dates computed for the current week.
  */
@@ -432,26 +434,41 @@ export function generatePersonalizedWeekPlan(
 }
 
 export const MealPlanScreen: React.FC = () => {
-  const { userProfile, addMeal, isDarkMode } = useDietStore();
+  const userProfile = useDietStore((state) => state.userProfile);
+  const addMeal = useDietStore((state) => state.addMeal);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const customWeekPlan = useDietStore((state) => state.customWeekPlan);
+  const setCustomWeekPlan = useDietStore((state) => state.setCustomWeekPlan);
+  const updateDayMeal = useDietStore((state) => state.updateDayMeal);
   const theme = getThemeColors(isDarkMode);
-
-  const [weekPlan, setWeekPlan] = useState<DayPlan[]>(() =>
-    generatePersonalizedWeekPlan(userProfile.allergies || [], userProfile.dietaryGoal || 'weight_loss')
-  );
 
   // Automatically default selected tab to TODAY's index (0 = Mon, 1 = Tue, etc.)
   const now = new Date();
   const todayMondayIndex = (now.getDay() + 6) % 7;
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => todayMondayIndex);
 
-  // Synchronize meal plan dynamically when user changes profile/allergies/goals
+  // Initialize or synchronize meal plan if not yet set in store
   useEffect(() => {
-    setWeekPlan(
-      generatePersonalizedWeekPlan(userProfile.allergies || [], userProfile.dietaryGoal || 'weight_loss')
-    );
-  }, [userProfile.allergies, userProfile.dietaryGoal]);
+    if (!customWeekPlan || customWeekPlan.length === 0) {
+      const initialPlan = generatePersonalizedWeekPlan(
+        userProfile.allergies || [],
+        userProfile.dietaryGoal || 'weight_loss'
+      );
+      setCustomWeekPlan(initialPlan);
+    }
+  }, [userProfile.allergies, userProfile.dietaryGoal, customWeekPlan, setCustomWeekPlan]);
 
-  const activeDay = weekPlan[selectedDayIndex] || weekPlan[0];
+  const effectiveWeekPlan: DayPlan[] = useMemo(() => {
+    if (customWeekPlan && customWeekPlan.length === 7) {
+      return customWeekPlan;
+    }
+    return generatePersonalizedWeekPlan(
+      userProfile.allergies || [],
+      userProfile.dietaryGoal || 'weight_loss'
+    );
+  }, [customWeekPlan, userProfile.allergies, userProfile.dietaryGoal]);
+
+  const activeDay = effectiveWeekPlan[selectedDayIndex] || effectiveWeekPlan[0];
 
   // Calculate day total metrics
   const totalPlannedCalories =
@@ -466,8 +483,9 @@ export const MealPlanScreen: React.FC = () => {
     activeDay.dinner.proteinGrams +
     activeDay.snack.proteinGrams;
 
-  // Swap single meal with next safe alternative recipe
+  // Swap single meal with next safe alternative recipe and persist in store
   const handleSwapMeal = (mealType: MealType) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     const allForType = ALTERNATIVE_MEALS[mealType];
     const safeAlternatives = allForType.filter((m) =>
       isMealSafeForProfile(m, userProfile.allergies || [], userProfile.dietaryGoal)
@@ -479,20 +497,14 @@ export const MealPlanScreen: React.FC = () => {
     const nextIndex = (currentIndex + 1) % pool.length;
     const nextMeal = pool[nextIndex];
 
-    setWeekPlan((prevPlan) => {
-      const updated = [...prevPlan];
-      updated[selectedDayIndex] = {
-        ...updated[selectedDayIndex],
-        [mealType]: nextMeal,
-      };
-      return updated;
-    });
+    updateDayMeal(selectedDayIndex, mealType, nextMeal);
 
     Alert.alert('Öğün Yenilendi! 🔄', `Profilinize uygun yeni seçim: "${nextMeal.title}" (${nextMeal.calories} kcal)`);
   };
 
   // Log meal directly to user's daily Dashboard
   const handleLogMealToToday = (meal: MealRecipe, mealType: MealType) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     addMeal({
       name: meal.title,
       portionGrams: 200,
@@ -507,6 +519,9 @@ export const MealPlanScreen: React.FC = () => {
   };
 
   const renderMealCard = (meal: MealRecipe, mealType: MealType, titleLabel: string, icon: string) => {
+    const allergenWarnings = getAllergenWarnings(meal, userProfile.allergies);
+    const hasUserAllergies = (userProfile.allergies || []).length > 0;
+
     return (
       <View
         style={[
@@ -537,6 +552,54 @@ export const MealPlanScreen: React.FC = () => {
         </View>
 
         <Text style={[styles.mealDescription, { color: theme.textSecondary }]}>{meal.description}</Text>
+
+        {/* Allergen Warning / Security Badges */}
+        {allergenWarnings.length > 0 && (
+          <View
+            style={[
+              styles.allergenAlertCard,
+              {
+                backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.35)' : '#FCA5A5',
+              },
+            ]}
+          >
+            <View style={styles.allergenAlertHeader}>
+              <Text style={styles.allergenAlertIcon}>⚠️</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.allergenAlertTitle, { color: theme.danger }]}>
+                  Alerjen Riski: {allergenWarnings.join(', ')}
+                </Text>
+                <Text style={[styles.allergenAlertSub, { color: theme.textSecondary }]}>
+                  Profilinizdeki alerji tercihiyle çakışıyor. Güvenli tarifle değiştirebilirsiniz.
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.allergenQuickSwapBtn, { backgroundColor: theme.danger }]}
+              onPress={() => handleSwapMeal(mealType)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.allergenQuickSwapText}>🛡️ Güvenli Tarif Seç 🔄</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {hasUserAllergies && allergenWarnings.length === 0 && (
+          <View
+            style={[
+              styles.allergenSafeBadge,
+              {
+                backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
+                borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#A7F3D0',
+              },
+            ]}
+          >
+            <Text style={[styles.allergenSafeText, { color: theme.primary }]}>
+              🛡️ Alerjen Güvenli • Profilinizdeki alerji filtrelerine uygundur
+            </Text>
+          </View>
+        )}
 
         {/* Macro breakdown */}
         <View style={styles.macroPillsRow}>
@@ -660,7 +723,7 @@ export const MealPlanScreen: React.FC = () => {
       {/* 7-Day Horizontal Day Picker with Real Calendar Dates */}
       <View style={styles.dayPickerWrapper}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayPickerContent}>
-          {weekPlan.map((day, idx) => {
+          {effectiveWeekPlan.map((day, idx) => {
             const isSelected = selectedDayIndex === idx;
             return (
               <TouchableOpacity
@@ -671,7 +734,10 @@ export const MealPlanScreen: React.FC = () => {
                   isSelected && [styles.dayTabActive, { backgroundColor: theme.primary, borderColor: theme.primary }],
                   day.isToday && !isSelected && { borderColor: theme.primary, borderWidth: 1.8 },
                 ]}
-                onPress={() => setSelectedDayIndex(idx)}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setSelectedDayIndex(idx);
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.dayShortText, { color: theme.textMuted }, isSelected && styles.dayShortActive]}>
@@ -1039,5 +1105,58 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  /* Allergen Alert & Security Badges */
+  allergenAlertCard: {
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  allergenAlertHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  allergenAlertIcon: {
+    fontSize: 16,
+    marginTop: 1,
+  },
+  allergenAlertTitle: {
+    ...Typography.captionBold,
+    fontSize: 12,
+  },
+  allergenAlertSub: {
+    ...Typography.tiny,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  allergenQuickSwapBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  allergenQuickSwapText: {
+    ...Typography.tiny,
+    color: Colors.textInverse,
+    fontWeight: '700',
+  },
+  allergenSafeBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  allergenSafeText: {
+    ...Typography.tiny,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

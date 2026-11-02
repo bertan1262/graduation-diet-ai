@@ -18,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0A0A0E",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -31,10 +31,12 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow DietAI to access your camera for food recognition."
+          "cameraPermission": "Allow DietAI to access your camera for food recognition.",
+          "recordAudioAndroid": false
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-status-bar"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

@@ -1,5 +1,7 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Platform } from 'react-native';
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
@@ -19,11 +21,13 @@ export const Header: React.FC<HeaderProps> = ({
   onAvatarPress,
   rightAction,
 }) => {
-  const { userProfile, isDarkMode, toggleDarkMode } = useDietStore();
+  const userName = useDietStore((state) => state.userProfile?.name);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const toggleDarkMode = useDietStore((state) => state.toggleDarkMode);
   const theme = getThemeColors(isDarkMode);
 
   const initials =
-    (userProfile?.name || 'Diet AI')
+    (userName || 'Diet AI')
       .trim()
       .split(/\s+/)
       .filter(Boolean)
@@ -40,7 +44,20 @@ export const Header: React.FC<HeaderProps> = ({
   }).format(new Date());
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.78)' : 'rgba(255, 255, 255, 0.82)',
+          borderBottomColor: theme.border,
+        },
+      ]}
+    >
+      <BlurView
+        intensity={Platform.OS === 'ios' ? 70 : 100}
+        tint={isDarkMode ? 'dark' : 'light'}
+        style={StyleSheet.absoluteFill}
+      />
       <View style={styles.textContainer}>
         <View style={styles.brandRow}>
           <Text style={styles.leafIcon}>🥗</Text>
@@ -60,7 +77,10 @@ export const Header: React.FC<HeaderProps> = ({
                 styles.themeToggleBtn,
                 { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
               ]}
-              onPress={toggleDarkMode}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                toggleDarkMode();
+              }}
               activeOpacity={0.7}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
@@ -73,7 +93,10 @@ export const Header: React.FC<HeaderProps> = ({
                   styles.avatarButton,
                   { backgroundColor: theme.primaryMuted, borderColor: theme.primary },
                 ]}
-                onPress={onAvatarPress}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  onAvatarPress?.();
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.avatarText, { color: isDarkMode ? theme.primary : Colors.primaryDark }]}>
@@ -93,6 +116,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    overflow: 'hidden',
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.md,

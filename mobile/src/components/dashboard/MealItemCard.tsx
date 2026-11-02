@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { LoggedMealItem } from '../../types';
 import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
@@ -120,7 +121,10 @@ export const MealItemCard: React.FC<MealItemCardProps> = ({ meal, onDelete, onEd
 
         <TouchableOpacity
           style={styles.deleteButton}
-          onPress={() => onDelete(meal.id)}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+            onDelete(meal.id);
+          }}
           activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >

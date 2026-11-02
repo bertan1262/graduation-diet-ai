@@ -8,30 +8,35 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Colors, getThemeColors, ThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
-import { ChatMessage } from '../types';
+import { ChatMessage, UserDietContext } from '../types';
 import { ChatBubble } from '../components/chat/ChatBubble';
 import { QuickPromptChips } from '../components/chat/QuickPromptChips';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
 import { useDietStore } from '../store/useDietStore';
-import { apiService, isMedicalQuery } from '../services/api';
+import {
+  apiService,
+  isMedicalQuery,
+  generateContextualMockDietitianReply,
+} from '../services/api';
 
 export const ChatScreen: React.FC = () => {
+  // Atomic store selectors to prevent unnecessary re-renders
   const userProfile = useDietStore((state) => state.userProfile);
+  const todayMeals = useDietStore((state) => state.todayMeals);
+  const waterIntakeMl = useDietStore((state) => state.waterIntakeMl);
   const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const messages = useDietStore((state) => state.chatMessages);
+  const addChatMessage = useDietStore((state) => state.addChatMessage);
+  const clearChatMessages = useDietStore((state) => state.clearChatMessages);
+  const getDailySummary = useDietStore((state) => state.getDailySummary);
+
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
 
-  const initialAssistantMessage: ChatMessage = {
-    id: 'msg-welcome',
-    sender: 'assistant',
-    content: `Merhaba ${userProfile.name}! 👋 Ben DietAI yapay zekâ beslenme danışmanınızım.\n\nGünlük ${userProfile.targetCalories} kcal hedefiniz ve ${userProfile.targetProteinGrams}g protein ihtiyacınız doğrultusunda tabağınızı analiz edebilir, ara öğün önerileri sunabilir veya makro dengenizi optimize edebilirim. Bugün size nasıl yardımcı olabilirim?`,
-    timestamp: '09:00',
-  };
-
-  const [messages, setMessages] = useState<ChatMessage[]>([initialAssistantMessage]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
@@ -52,66 +57,42 @@ export const ChatScreen: React.FC = () => {
     }).format(new Date());
   };
 
-  // Smart Contextual AI Dietitian Responder
-  const generateDietitianResponse = (
-    userPrompt: string
-  ): {
-    content: string;
-    isMedicalWarning?: boolean;
-  } => {
-    const query = userPrompt.toLowerCase();
-
-    if (isMedicalQuery(query)) {
-      return {
-        content:
-          'Sağlığınız her şeyden önemlidir. DietAI genel beslenme ve kalori rehberliği sunar; tıbbi tanı koyamaz ve ilaç tedavisi öneremez. Lütfen bu durumu mutlaka hekiminize veya uzman bir klinik diyetisyene danışınız.',
-        isMedicalWarning: true,
-      };
-    }
-
-    if (query.includes('protein')) {
-      return {
-        content: `Günlük protein hedefiniz ${userProfile.targetProteinGrams}g olarak belirlendi. Kas onarımı ve uzun süreli tokluk için öğünlerinizde ızgara tavuk göğsü, yumurta, lor peyniri, somon veya kinoa gibi yüksek kaliteli protein kaynaklarına yer verebilirsiniz. 🍗🥚`,
-      };
-    }
-
-    if (query.includes('su') || query.includes('hidrasyon')) {
-      return {
-        content: `Harika bir konu! Günlük su hedefiniz ${userProfile.waterGoalMl} ml. Yeterli hidrasyon metabolizma hızınızı destekler ve sahte açlık krizlerini önler. Gün boyunca küçük yudumlarla su içmeyi ihmal etmeyin! 💧`,
-      };
-    }
-
-    if (query.includes('kalori') || query.includes('kilo') || query.includes('bmr')) {
-      return {
-        content: `Mevcut BMR değeriniz ${userProfile.bmr} kcal, günlük hedefiniz ise ${userProfile.targetCalories} kcal'dir. Kalori açığınızı çok sert yapmadan, besin değeri yüksek gıdalarla ilerlemek yağ yakımını sürdürülebilir kılar. 🔥`,
-      };
-    }
-
-    if (query.includes('akşam') || query.includes('gece')) {
-      return {
-        content:
-          'Akşam öğünlerinde sindirimi kolay, glisemik indeksi düşük alternatifler tercih etmek kaliteli uyku ve yağ yakımı için idealdir. Örneğin buharda sebzeler eşliğinde ızgara balık veya zeytinyağlı taze mevsim salatası harika bir seçimdir. 🥗',
-      };
-    }
-
-    if (query.includes('kahvaltı') || query.includes('sabah')) {
-      return {
-        content:
-          'Güne kan şekerini dengede tutan protein ağırlıklı bir kahvaltıyla başlamak gün boyu tatlı ataklarını önler. 2 haşlanmış yumurta, çeyrek avokado ve bol yeşillik veya yulaf ezmesi tabağı güne harika bir başlangıç sağlar! 🍳',
-      };
-    }
-
-    if (query.includes('tatlı') || query.includes('şeker') || query.includes('kriz') || query.includes('ara öğün')) {
-      return {
-        content:
-          'Tatlı krizleri genellikle kan şekeri dalgalanması veya yetersiz proteinden kaynaklanır. Bitter çikolata (%80+), bir avuç badem ile tarçınlı yeşil elma dilimleri veya kakaolu lor tatlısı krizleri sağlıklı şekilde durdurur. 🍎🍫',
-      };
-    }
-
+  // Build client-side user context payload for personalized dietary suggestions
+  const buildUserContext = (): UserDietContext => {
+    const summary = getDailySummary();
     return {
-      content:
-        'Beslenme hedeflerinizi titizlikle takip ediyorum! Günlük makrolarınızda temiz protein ve kompleks karbonhidratları dengeli tutarak enerjinizi zirvede tutabilirsiniz. Tabağınızdaki yemeklerin analizi veya alternatif tarifler için dilediğinizi sorabilirsiniz. 🥑✨',
+      targetCalories: userProfile.targetCalories,
+      consumedCalories: summary.totalCalories,
+      remainingCalories: summary.remainingCalories,
+      consumedProtein: summary.totalProtein,
+      targetProtein: userProfile.targetProteinGrams,
+      consumedCarbs: summary.totalCarbs,
+      targetCarbs: userProfile.targetCarbsGrams,
+      consumedFat: summary.totalFat,
+      targetFat: userProfile.targetFatGrams,
+      waterIntakeMl,
+      waterGoalMl: userProfile.waterGoalMl,
+      goal: userProfile.dietaryGoal,
+      currentWeightKg: userProfile.weightKg,
+      targetWeightKg: userProfile.targetWeightKg,
+      bmr: userProfile.bmr,
+      recentMealNames: todayMeals.slice(-5).map((m) => m.name),
     };
+  };
+
+  const handleClearHistory = () => {
+    Alert.alert(
+      'Sohbeti Sıfırla',
+      'Diyetisyen ile olan mesaj geçmişini temizlemek ve yeni bir konuşma başlatmak istediğinize emin misiniz?',
+      [
+        { text: 'Vazgeç', style: 'cancel' },
+        {
+          text: 'Sıfırla',
+          style: 'destructive',
+          onPress: () => clearChatMessages(),
+        },
+      ]
+    );
   };
 
   const handleSendMessage = (textToSend?: string) => {
@@ -126,57 +107,62 @@ export const ChatScreen: React.FC = () => {
       timestamp: getTimeString(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    addChatMessage(userMessage);
     if (textToSend === undefined) {
       setInputText('');
     }
     setIsTyping(true);
 
+    const clientContext = buildUserContext();
     const useMock = useDietStore.getState().useMockData;
 
     if (useMock) {
-      // Offline local simulation
+      // Deterministic offline context-aware reply
       setTimeout(() => {
-        const responseData = generateDietitianResponse(trimmed);
+        const isMedical = isMedicalQuery(trimmed);
+        const replyText = isMedical
+          ? 'Sağlığınız her şeyden önemlidir. DietAI genel beslenme ve kalori rehberliği sunar; tıbbi tanı koyamaz ve ilaç tedavisi öneremez. Lütfen bu durumu mutlaka hekiminize veya uzman bir klinik diyetisyene danışınız.'
+          : generateContextualMockDietitianReply(trimmed, clientContext);
+
         const assistantMessage: ChatMessage = {
           id: `assistant-${Date.now()}`,
           sender: 'assistant',
-          content: responseData.content,
+          content: replyText,
           timestamp: getTimeString(),
-          isMedicalWarning: responseData.isMedicalWarning,
+          isMedicalWarning: isMedical,
+          safety_flag_triggered: isMedical,
         };
 
-        setMessages((prev) => [...prev, assistantMessage]);
+        addChatMessage(assistantMessage);
         setIsTyping(false);
-      }, 750);
+      }, 700);
     } else {
-      // Live backend integration with graceful offline fallback
-      const localEnrichment = generateDietitianResponse(trimmed);
+      // Live backend integration with metadata payload and graceful offline fallback
       apiService
-        .sendChatMessage(trimmed)
+        .sendChatMessage(trimmed, clientContext)
         .then((liveMessage) => {
-          setMessages((prev) => [
-            ...prev,
-            {
-              ...liveMessage,
-              isMedicalWarning: Boolean(
-                liveMessage.isMedicalWarning || liveMessage.safety_flag_triggered
-              ),
-              timestamp: getTimeString(),
-            },
-          ]);
+          addChatMessage({
+            ...liveMessage,
+            isMedicalWarning: Boolean(
+              liveMessage.isMedicalWarning || liveMessage.safety_flag_triggered
+            ),
+            timestamp: getTimeString(),
+          });
         })
         .catch(() => {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `assistant-${Date.now()}`,
-              sender: 'assistant',
-              content: localEnrichment.content,
-              timestamp: getTimeString(),
-              isMedicalWarning: localEnrichment.isMedicalWarning,
-            },
-          ]);
+          const isMedical = isMedicalQuery(trimmed);
+          const fallbackContent = isMedical
+            ? 'Sağlığınız her şeyden önemlidir. DietAI genel beslenme ve kalori rehberliği sunar; tıbbi tanı koyamaz ve ilaç tedavisi öneremez. Lütfen bu durumu mutlaka hekiminize veya uzman bir klinik diyetisyene danışınız.'
+            : generateContextualMockDietitianReply(trimmed, clientContext);
+
+          addChatMessage({
+            id: `assistant-${Date.now()}`,
+            sender: 'assistant',
+            content: fallbackContent,
+            timestamp: getTimeString(),
+            isMedicalWarning: isMedical,
+            safety_flag_triggered: isMedical,
+          });
         })
         .finally(() => {
           setIsTyping(false);
@@ -190,16 +176,40 @@ export const ChatScreen: React.FC = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      {/* 1. Legal Safety Guardrail Banner */}
+      {/* 1. Header Bar with Clear Chat Action */}
+      <View style={styles.topHeader}>
+        <View style={styles.headerTitleGroup}>
+          <View style={styles.headerAvatar}>
+            <Text style={styles.headerAvatarEmoji}>🤖</Text>
+          </View>
+          <View>
+            <Text style={styles.headerTitle}>DietAI Diyetisyeni</Text>
+            <View style={styles.headerStatusRow}>
+              <View style={styles.onlineDot} />
+              <Text style={styles.headerSubtitle}>Çevrimiçi • Beslenme Koçu</Text>
+            </View>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.clearButton}
+          onPress={handleClearHistory}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.clearButtonText}>🗑️ Sıfırla</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* 2. Legal Safety Guardrail Banner */}
       <View style={styles.safetyBanner}>
         <Text style={styles.safetyIcon}>🛡️</Text>
         <Text style={styles.safetyText}>
           <Text style={styles.safetyBold}>Tıbbi Sorumluluk Reddi: </Text>
-          DietAI tıbbi tanı koymaz ve reçete vermez. Genel beslenme ve makro dengesi rehberliği sunar.
+          DietAI genel beslenme ve kalori rehberliği sunar; tıbbi tanı koyamaz ve ilaç tedavisi öneremez.
         </Text>
       </View>
 
-      {/* 2. Messages Stream */}
+      {/* 3. Messages Stream */}
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -207,16 +217,17 @@ export const ChatScreen: React.FC = () => {
         renderItem={({ item }) => <ChatBubble message={item} />}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        ListFooterComponent={isTyping ? <TypingIndicator /> : null}
+        keyboardDismissMode="interactive"
+        ListFooterComponent={isTyping ? <TypingIndicator /> : undefined}
       />
 
-      {/* 3. Day 14: Interactive Quick Prompt Suggestion Chips */}
+      {/* 4. Interactive Quick Prompt Suggestion Chips (Time-of-day aware) */}
       <QuickPromptChips
         onSelectPrompt={(promptText) => handleSendMessage(promptText)}
         disabled={isTyping}
       />
 
-      {/* 4. Interactive Input Bar */}
+      {/* 5. Interactive Input Bar */}
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.textInput}
@@ -250,17 +261,83 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       flex: 1,
       backgroundColor: theme.background,
     },
+    topHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm + 2,
+      backgroundColor: theme.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+      ...Shadows.subtle,
+    },
+    headerTitleGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    headerAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: isDarkMode ? '#1E293B' : Colors.primaryMuted,
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#334155' : Colors.primaryLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: Spacing.sm,
+    },
+    headerAvatarEmoji: {
+      fontSize: 18,
+    },
+    headerTitle: {
+      ...Typography.subtitle,
+      fontSize: 15,
+      fontWeight: '700',
+      color: theme.textPrimary,
+    },
+    headerStatusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 2,
+    },
+    onlineDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: Colors.primary,
+      marginRight: 5,
+    },
+    headerSubtitle: {
+      ...Typography.tiny,
+      fontSize: 11,
+      color: theme.textMuted,
+    },
+    clearButton: {
+      paddingHorizontal: Spacing.sm + 2,
+      paddingVertical: 5,
+      borderRadius: BorderRadius.md,
+      backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9',
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#334155' : '#E2E8F0',
+    },
+    clearButtonText: {
+      ...Typography.tiny,
+      fontSize: 11,
+      fontWeight: '600',
+      color: isDarkMode ? '#94A3B8' : '#64748B',
+    },
     safetyBanner: {
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: isDarkMode ? '#172554' : '#EFF6FF',
-      paddingVertical: Spacing.sm,
+      paddingVertical: Spacing.xs + 2,
       paddingHorizontal: Spacing.md,
       borderBottomWidth: 1,
       borderBottomColor: isDarkMode ? '#1E3A8A' : '#DBEAFE',
     },
     safetyIcon: {
-      fontSize: 14,
+      fontSize: 13,
       marginRight: Spacing.xs,
     },
     safetyText: {

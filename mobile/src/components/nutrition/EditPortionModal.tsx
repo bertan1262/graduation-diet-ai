@@ -44,7 +44,8 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
   onSave,
   onDelete,
 }) => {
-  const { userProfile, isDarkMode } = useDietStore();
+  const userProfile = useDietStore((state) => state.userProfile);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
 

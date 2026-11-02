@@ -11,6 +11,7 @@ interface MacroItemProps {
   color: string;
   lightColor: string;
   unit?: string;
+  compact?: boolean;
   theme: ThemeColors;
   isDarkMode: boolean;
   styles: ReturnType<typeof createStyles>;
@@ -23,6 +24,7 @@ export const MacroItem: React.FC<MacroItemProps> = ({
   color,
   lightColor,
   unit = 'g',
+  compact = false,
   theme,
   isDarkMode,
   styles,
@@ -31,6 +33,34 @@ export const MacroItem: React.FC<MacroItemProps> = ({
   const progressPercent = Math.min(100, Math.round(progressRatio * 100));
   const remainingGrams = Math.max(0, Math.round((targetGrams - currentGrams) * 10) / 10);
   const isOver = currentGrams > targetGrams;
+
+  if (compact) {
+    return (
+      <View style={styles.compactItemContainer}>
+        <View style={styles.compactHeaderRow}>
+          <View style={styles.labelGroup}>
+            <View style={[styles.colorDot, { backgroundColor: color }]} />
+            <Text style={styles.compactLabel}>{label}</Text>
+          </View>
+          <Text style={styles.compactValue}>
+            {currentGrams} / {targetGrams}{unit}
+          </Text>
+        </View>
+
+        <View style={[styles.compactTrackBar, { backgroundColor: theme.surfaceSubtle }]}>
+          <View
+            style={[
+              styles.progressBar,
+              {
+                width: `${Math.min(100, progressPercent)}%`,
+                backgroundColor: isOver ? Colors.danger : color,
+              },
+            ]}
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.macroItemContainer}>
@@ -111,6 +141,8 @@ interface MacroSummaryCardProps {
   fiberGrams?: number;
   sugarGrams?: number;
   sodiumMg?: number;
+  hideTitle?: boolean;
+  compact?: boolean;
 }
 
 export const MacroBar: React.FC<MacroSummaryCardProps> = ({
@@ -123,6 +155,8 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
   fiberGrams,
   sugarGrams,
   sodiumMg,
+  hideTitle = false,
+  compact = false,
 }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const getDailySummary = useDietStore((state) => state.getDailySummary);
@@ -139,7 +173,7 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Makro Besin Dengesi</Text>
+      {!hideTitle && <Text style={styles.title}>Makro Besin Dengesi</Text>}
 
       <MacroItem
         label="Protein"
@@ -147,12 +181,13 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
         targetGrams={targetProteinGrams}
         color={Colors.protein}
         lightColor={Colors.proteinLight}
+        compact={compact}
         theme={theme}
         isDarkMode={isDarkMode}
         styles={styles}
       />
 
-      <View style={styles.itemDivider} />
+      {!compact && <View style={styles.itemDivider} />}
 
       <MacroItem
         label="Karbonhidrat"
@@ -160,12 +195,13 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
         targetGrams={targetCarbsGrams}
         color={Colors.carbs}
         lightColor={Colors.carbsLight}
+        compact={compact}
         theme={theme}
         isDarkMode={isDarkMode}
         styles={styles}
       />
 
-      <View style={styles.itemDivider} />
+      {!compact && <View style={styles.itemDivider} />}
 
       <MacroItem
         label="Sağlıklı Yağ"
@@ -173,27 +209,30 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
         targetGrams={targetFatGrams}
         color={Colors.fat}
         lightColor={Colors.fatLight}
+        compact={compact}
         theme={theme}
         isDarkMode={isDarkMode}
         styles={styles}
       />
 
-      {/* Phase 2.2: Expandable Micronutrients & Fiber Accordion (Waistline Model) */}
-      <TouchableOpacity
-        style={styles.accordionToggleBtn}
-        onPress={() => setIsMicroExpanded((prev) => !prev)}
-        activeOpacity={0.75}
-      >
-        <View style={styles.accordionTitleGroup}>
-          <Text style={styles.accordionIcon}>🧬</Text>
-          <Text style={styles.accordionTitleText}>
-            Mikro Besin & Lif Detayları ({currentFiber}g Lif)
-          </Text>
-        </View>
-        <Text style={styles.accordionChevron}>{isMicroExpanded ? '▴ Gizle' : '▾ Göster'}</Text>
-      </TouchableOpacity>
+      {/* Expandable Micronutrients & Fiber Accordion */}
+      {!compact && (
+        <TouchableOpacity
+          style={styles.accordionToggleBtn}
+          onPress={() => setIsMicroExpanded((prev) => !prev)}
+          activeOpacity={0.75}
+        >
+          <View style={styles.accordionTitleGroup}>
+            <Text style={styles.accordionIcon}>🧬</Text>
+            <Text style={styles.accordionTitleText}>
+              Mikro Besin & Lif Detayları ({currentFiber}g Lif)
+            </Text>
+          </View>
+          <Text style={styles.accordionChevron}>{isMicroExpanded ? '▴ Gizle' : '▾ Göster'}</Text>
+        </TouchableOpacity>
+      )}
 
-      {isMicroExpanded && (
+      {isMicroExpanded && !compact && (
         <View style={styles.microDrawer}>
           <MacroItem
             label="🌾 Diyet Lifi (Fiber)"
@@ -253,6 +292,32 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
     macroItemContainer: {
       marginVertical: Spacing.xs,
     },
+    compactItemContainer: {
+      marginVertical: 4,
+    },
+    compactHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 3,
+    },
+    compactLabel: {
+      ...Typography.tiny,
+      fontWeight: '700',
+      color: theme.textPrimary,
+      fontSize: 12,
+    },
+    compactValue: {
+      ...Typography.tiny,
+      fontSize: 11,
+      color: theme.textSecondary,
+      fontWeight: '600',
+    },
+    compactTrackBar: {
+      height: 6,
+      borderRadius: BorderRadius.full,
+      overflow: 'hidden',
+    },
     headerRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -264,10 +329,10 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       alignItems: 'center',
     },
     colorDot: {
-      width: 8,
-      height: 8,
+      width: 7,
+      height: 7,
       borderRadius: BorderRadius.full,
-      marginRight: Spacing.sm,
+      marginRight: 6,
     },
     macroLabel: {
       ...Typography.bodyBold,

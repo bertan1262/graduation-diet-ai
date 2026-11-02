@@ -182,22 +182,17 @@ export async function fetchProductByBarcode(barcode: string): Promise<{
           imageUrl: prod.image_front_url || undefined,
           source: 'openfoodfacts',
         };
+      } else {
+        throw new Error('Okutulan barkoda ait ürün veritabanında bulunamadı. Lütfen tabağın fotoğrafını çekin veya yemeği arayarak ekleyin.');
       }
+    } else {
+      throw new Error('Barkod servisine ulaşılamadı (HTTP ' + response.status + '). Lütfen tekrar deneyin.');
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.message && (err.message.includes('bulunamadı') || err.message.includes('ulaşılamadı'))) {
+      throw err;
+    }
     console.warn(`[OpenFoodFacts] Barkod (${cleanBarcode}) API sorgusunda hata / zaman aşımı:`, err);
+    throw new Error('Okutulan barkod veritabanında bulunamadı veya bağlantı zaman aşımına uğradı. Lütfen manuel ekleyin.');
   }
-
-  // 3. Robust fallback: Return default healthy product with custom barcode tag
-  return {
-    detection: {
-      id: `barcode-${cleanBarcode}-${Date.now()}`,
-      foodName: `${DEFAULT_FALLBACK.name}`,
-      portionGrams: DEFAULT_FALLBACK.servingGrams,
-      confidenceScore: 0.98,
-      nutrition: DEFAULT_FALLBACK.nutrition,
-    },
-    imageUrl: DEFAULT_FALLBACK.imageUrl,
-    source: 'fallback',
-  };
 }

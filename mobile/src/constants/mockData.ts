@@ -3,7 +3,6 @@ import {
   LoggedMealItem,
   FoodItemDetection,
   CustomRecipe,
-  ProgressPhotoEntry,
   WeeklyWeightEntry,
 } from '../types';
 
@@ -170,23 +169,6 @@ export const INITIAL_CUSTOM_RECIPES: CustomRecipe[] = [
     totalFatGrams: 21,
     totalFiberGrams: 9.5,
     totalGrams: 400,
-  },
-];
-
-export const INITIAL_PROGRESS_PHOTOS: ProgressPhotoEntry[] = [
-  {
-    id: 'prog-before',
-    dateStr: '15 Eyl 2026',
-    weightKg: 79.4,
-    imageUri: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=600&q=80',
-    label: 'Başlangıç (1. Gün)',
-  },
-  {
-    id: 'prog-after',
-    dateStr: 'Bugün',
-    weightKg: 76.0,
-    imageUri: 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80',
-    label: 'Güncel Durum (6. Hafta)',
   },
 ];
 

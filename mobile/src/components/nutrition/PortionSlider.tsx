@@ -9,6 +9,7 @@ import {
   PanResponderGestureState,
   LayoutChangeEvent,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
@@ -163,6 +164,7 @@ export const PortionSlider: React.FC<PortionSliderProps> = ({
 
   // Step change buttons (adapts to selected unit)
   const adjustByStep = (direction: -1 | 1) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     if (selectedUnit === 'g') {
       const nextVal = clamp(Math.round((value + direction * 25) / 5) * 5, min, max);
       onChange(nextVal);
@@ -174,6 +176,7 @@ export const PortionSlider: React.FC<PortionSliderProps> = ({
   };
 
   const handleSelectUnit = (unit: UnitDefinition) => {
+    Haptics.selectionAsync().catch(() => {});
     setSelectedUnit(unit.id);
     if (unit.id !== 'g') {
       // Snap cleanly to 1 unit if switching to a specialized unit for immediate clarity

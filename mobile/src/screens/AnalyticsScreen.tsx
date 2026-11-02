@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,12 +8,9 @@ import {
   useWindowDimensions,
   Share,
   Alert,
-  Image,
-  PanResponder,
-  LayoutChangeEvent,
 } from 'react-native';
 import Svg, { Rect, Line, Text as SvgText } from 'react-native-svg';
-import * as ImagePicker from 'expo-image-picker';
+import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors, ThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useDietStore } from '../store/useDietStore';
@@ -32,14 +29,12 @@ interface DayHistoryItem {
 }
 
 export const AnalyticsScreen: React.FC = () => {
-  const {
-    userProfile,
-    todayMeals,
-    waterIntakeMl,
-    progressPhotos,
-    addProgressPhoto,
-    isDarkMode,
-  } = useDietStore();
+  const userProfile = useDietStore((state) => state.userProfile);
+  const todayMeals = useDietStore((state) => state.todayMeals);
+  const waterIntakeMl = useDietStore((state) => state.waterIntakeMl);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const dailyHistory = useDietStore((state) => state.dailyHistory);
+
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = Math.max(240, screenWidth - Spacing.lg * 2 - Spacing.xl * 2);
 
@@ -47,86 +42,6 @@ export const AnalyticsScreen: React.FC = () => {
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
 
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(6); // Default to today
-  const [splitPercent, setSplitPercent] = useState<number>(50);
-  const sliderWidthRef = useRef<number>(280);
-  const startSplitRef = useRef<number>(50);
-
-  const clampSplit = (val: number) => Math.max(12, Math.min(88, val));
-
-  const splitPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_evt, gs) => Math.abs(gs.dx) > 2,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (evt) => {
-        if (sliderWidthRef.current > 0 && evt.nativeEvent.locationX !== undefined) {
-          const pct = clampSplit(
-            Math.round((evt.nativeEvent.locationX / sliderWidthRef.current) * 100)
-          );
-          startSplitRef.current = pct;
-          setSplitPercent(pct);
-        }
-      },
-      onPanResponderMove: (_evt, gs) => {
-        if (sliderWidthRef.current > 0) {
-          const deltaPct = (gs.dx / sliderWidthRef.current) * 100;
-          setSplitPercent(clampSplit(Math.round(startSplitRef.current + deltaPct)));
-        }
-      },
-    })
-  ).current;
-
-  const handleSliderLayout = (e: LayoutChangeEvent) => {
-    sliderWidthRef.current = e.nativeEvent.layout.width || 280;
-  };
-
-  const beforePhoto = progressPhotos[0] || {
-    id: 'before-fallback',
-    dateStr: 'Başlangıç',
-    weightKg: (userProfile.weightKg || 76) + 3.4,
-    imageUri:
-      'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=600&q=80',
-    label: 'Başlangıç (1. Gün)',
-  };
-
-  const afterPhoto = progressPhotos[progressPhotos.length - 1] || {
-    id: 'after-fallback',
-    dateStr: 'Bugün',
-    weightKg: userProfile.weightKg || 76,
-    imageUri:
-      'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80',
-    label: 'Güncel Durum',
-  };
-
-  const weightDiff = Math.round((afterPhoto.weightKg - beforePhoto.weightKg) * 10) / 10;
-
-  const handleAddProgressPhoto = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.75,
-        selectionLimit: 1,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const todayStr = new Intl.DateTimeFormat('tr-TR', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-        }).format(new Date());
-
-        addProgressPhoto({
-          dateStr: todayStr,
-          weightKg: userProfile.weightKg || 76,
-          imageUri: asset.uri,
-          label: `Güncel (${todayStr})`,
-        });
-      }
-    } catch {
-      Alert.alert('Bilgi', 'Galeriden fotoğraf seçilemedi.');
-    }
-  };
 
   // Build reactive 7-day dataset with real calendar dates and current day dynamically linked to todayMeals
   const weeklyData: DayHistoryItem[] = useMemo(() => {
@@ -156,6 +71,21 @@ export const AnalyticsScreen: React.FC = () => {
       const daysAgo = 6 - idx;
       const d = new Date(now);
       d.setDate(now.getDate() - daysAgo);
+      const isoDate = new Intl.DateTimeFormat('en-CA').format(d);
+      const recorded = dailyHistory && dailyHistory[isoDate];
+
+      if (recorded) {
+        return {
+          dayLabel: weekdayFormatter.format(d),
+          dateStr: dateFormatter.format(d),
+          calories: recorded.calories,
+          protein: recorded.proteinGrams,
+          carbs: recorded.carbsGrams,
+          fat: recorded.fatGrams,
+          waterMl: recorded.waterMl,
+        };
+      }
+
       return {
         dayLabel: weekdayFormatter.format(d),
         dateStr: dateFormatter.format(d),
@@ -215,6 +145,7 @@ export const AnalyticsScreen: React.FC = () => {
 
   // PDF Export / Share Simulation
   const handleExportReport = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     try {
       const summaryText =
         `📋 DietAI Haftalık Klinik Beslenme Raporu\n` +
@@ -247,6 +178,66 @@ export const AnalyticsScreen: React.FC = () => {
 
   return (
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Motivational Weekly Adherence Hero Card */}
+      <View style={[styles.adherenceHeroCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.adherenceHeroTop}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.adherenceBadgeRow}>
+              <Text
+                style={[
+                  styles.adherenceBadge,
+                  {
+                    color: theme.primary,
+                    backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
+                  },
+                ]}
+              >
+                🎯 HAFTALIK KALORİ UYUMU
+              </Text>
+            </View>
+            <Text style={[styles.adherenceScoreValue, { color: theme.textPrimary }]}>
+              %{adherenceRate}{' '}
+              <Text style={[styles.adherenceScoreSubtitle, { color: theme.primary }]}>
+                {adherenceRate >= 85
+                  ? '• Mükemmel Denge 🌟'
+                  : adherenceRate >= 65
+                  ? '• İyi İlerleme 🔥'
+                  : '• Gelişiyor ⚡'}
+              </Text>
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.adherenceRingMini,
+              {
+                borderColor: theme.primary,
+                backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
+              },
+            ]}
+          >
+            <Text style={styles.adherenceRingEmoji}>{adherenceRate >= 80 ? '🏆' : '📈'}</Text>
+          </View>
+        </View>
+
+        {/* Adherence Progress Track */}
+        <View style={[styles.adherenceTrack, { backgroundColor: theme.surfaceSubtle }]}>
+          <View
+            style={[
+              styles.adherenceFill,
+              { width: `${adherenceRate}%`, backgroundColor: theme.primary },
+            ]}
+          />
+        </View>
+
+        <Text style={[styles.adherenceMotivationText, { color: theme.textSecondary }]}>
+          {adherenceRate >= 85
+            ? 'Son 7 günde kalori ve makro hedefinizi istikrarla korudunuz. Metabolizmanız hedefinize hızla adapte oluyor!'
+            : adherenceRate >= 65
+            ? 'Hedef kalorinize oldukça yakınsınız. Öğünler arası porsiyon dengesiyle uyum skorunuzu zirveye taşıyabilirsiniz.'
+            : 'Haftalık hedeflerinize ulaşmak için ana öğünlerde porsiyon kontrolünü elden bırakmayın.'}
+        </Text>
+      </View>
+
       {/* KPI Highlight Cards */}
       <View style={styles.kpiRow}>
         <View style={styles.kpiCard}>
@@ -354,6 +345,20 @@ export const AnalyticsScreen: React.FC = () => {
 
               return (
                 <React.Fragment key={`bar-${index}`}>
+                  {/* Selection Indicator Pin */}
+                  {isSelected && (
+                    <SvgText
+                      x={x + barWidth / 2}
+                      y={Math.max(12, y - 4)}
+                      fontSize={10}
+                      fontWeight="800"
+                      fill={theme.primary}
+                      textAnchor="middle"
+                    >
+                      ▼
+                    </SvgText>
+                  )}
+
                   <Rect
                     x={x}
                     y={y}
@@ -361,7 +366,11 @@ export const AnalyticsScreen: React.FC = () => {
                     height={barHeight}
                     rx={6}
                     fill={barColor}
-                    opacity={isSelected ? 1 : 0.8}
+                    opacity={isSelected ? 1 : 0.75}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setSelectedDayIndex(index);
+                    }}
                   />
 
                   {/* Day Label Text */}
@@ -378,6 +387,10 @@ export const AnalyticsScreen: React.FC = () => {
                         : theme.textSecondary
                     }
                     textAnchor="middle"
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setSelectedDayIndex(index);
+                    }}
                   >
                     {d.dayLabel}
                   </SvgText>
@@ -399,7 +412,10 @@ export const AnalyticsScreen: React.FC = () => {
                   borderColor: theme.primary,
                 },
               ]}
-              onPress={() => setSelectedDayIndex(idx)}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setSelectedDayIndex(idx);
+              }}
               activeOpacity={0.7}
             >
               <Text
@@ -462,103 +478,6 @@ export const AnalyticsScreen: React.FC = () => {
             </Text>
             <Text style={styles.macroGridLabel}>🥑 Yağ</Text>
           </View>
-        </View>
-      </View>
-
-      {/* Phase 4.1: Cal AI Before & After Visual Transformation Split Slider Card */}
-      <View style={styles.card}>
-        <View style={styles.beforeAfterHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>📸 Vücut Değişim Karşılaştırıcısı</Text>
-            <Text style={styles.cardSubtitle}>
-              Çizgiyi sağa-sola kaydırarak ilerlemenizi inceleyin
-            </Text>
-          </View>
-          <View style={styles.weightDiffBadge}>
-            <Text style={styles.weightDiffText}>
-              {weightDiff <= 0 ? `${weightDiff} kg` : `+${weightDiff} kg`}
-            </Text>
-          </View>
-        </View>
-
-        {/* Interactive Split Comparison Viewport */}
-        <View
-          style={styles.splitViewport}
-          onLayout={handleSliderLayout}
-          {...splitPanResponder.panHandlers}
-        >
-          {/* Base Full Layer: AFTER Photo (Right Side) */}
-          <Image
-            source={{ uri: afterPhoto.imageUri }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-          />
-
-          {/* Clipped Overlay Layer: BEFORE Photo (Left Side up to splitPercent%) */}
-          <View style={[styles.beforeClipContainer, { width: `${splitPercent}%` }]}>
-            <Image
-              source={{ uri: beforePhoto.imageUri }}
-              style={[
-                styles.beforeFullImage,
-                { width: sliderWidthRef.current || chartWidth },
-              ]}
-              resizeMode="cover"
-            />
-          </View>
-
-          {/* Left Badge: ÖNCESİ */}
-          <View style={styles.beforeCornerBadge}>
-            <Text style={styles.cornerBadgeTitle}>ÖNCESİ</Text>
-            <Text style={styles.cornerBadgeSub}>
-              {beforePhoto.dateStr} • {beforePhoto.weightKg} kg
-            </Text>
-          </View>
-
-          {/* Right Badge: SONRASI */}
-          <View style={styles.afterCornerBadge}>
-            <Text style={styles.cornerBadgeTitle}>SONRASI</Text>
-            <Text style={styles.cornerBadgeSub}>
-              {afterPhoto.dateStr} • {afterPhoto.weightKg} kg
-            </Text>
-          </View>
-
-          {/* Vertical Split Handle Line */}
-          <View style={[styles.splitDividerLine, { left: `${splitPercent}%` }]}>
-            <View style={styles.splitHandleCircle}>
-              <Text style={styles.splitHandleArrows}>↔</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Quick Split Position & Upload Row */}
-        <View style={styles.splitActionsRow}>
-          {[25, 50, 75].map((pct) => (
-            <TouchableOpacity
-              key={`split-${pct}`}
-              style={[
-                styles.splitQuickChip,
-                Math.abs(splitPercent - pct) < 8 && styles.splitQuickChipActive,
-              ]}
-              onPress={() => setSplitPercent(pct)}
-            >
-              <Text
-                style={[
-                  styles.splitQuickText,
-                  Math.abs(splitPercent - pct) < 8 && styles.splitQuickTextActive,
-                ]}
-              >
-                %{pct} Kıyasla
-              </Text>
-            </TouchableOpacity>
-          ))}
-
-          <TouchableOpacity
-            style={styles.uploadPhotoBtn}
-            onPress={handleAddProgressPhoto}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.uploadPhotoBtnText}>+ Fotoğraf Ekle</Text>
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -726,142 +645,6 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       ...Typography.tiny,
       color: theme.textMuted,
     },
-    beforeAfterHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: Spacing.md,
-    },
-    weightDiffBadge: {
-      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: BorderRadius.full,
-      borderWidth: 1,
-      borderColor: theme.primary,
-    },
-    weightDiffText: {
-      ...Typography.captionBold,
-      color: isDarkMode ? theme.primary : Colors.primaryDark,
-    },
-    splitViewport: {
-      width: '100%',
-      height: 215,
-      borderRadius: BorderRadius.xl,
-      overflow: 'hidden',
-      position: 'relative',
-      backgroundColor: '#0F172A',
-      borderWidth: 1.5,
-      borderColor: theme.border,
-    },
-    beforeClipContainer: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      bottom: 0,
-      overflow: 'hidden',
-    },
-    beforeFullImage: {
-      height: 215,
-    },
-    beforeCornerBadge: {
-      position: 'absolute',
-      bottom: 10,
-      left: 10,
-      backgroundColor: 'rgba(15, 23, 42, 0.82)',
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: BorderRadius.md,
-    },
-    afterCornerBadge: {
-      position: 'absolute',
-      bottom: 10,
-      right: 10,
-      backgroundColor: 'rgba(16, 185, 129, 0.9)',
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: BorderRadius.md,
-    },
-    cornerBadgeTitle: {
-      ...Typography.tiny,
-      fontSize: 9,
-      color: '#FFFFFF',
-      fontWeight: '800',
-      letterSpacing: 0.6,
-    },
-    cornerBadgeSub: {
-      ...Typography.tiny,
-      fontSize: 10,
-      color: '#FFFFFF',
-      fontWeight: '600',
-    },
-    splitDividerLine: {
-      position: 'absolute',
-      top: 0,
-      bottom: 0,
-      width: 3,
-      backgroundColor: '#FFFFFF',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginLeft: -1.5,
-    },
-    splitHandleCircle: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: Colors.primary,
-      borderWidth: 2,
-      borderColor: '#FFFFFF',
-      alignItems: 'center',
-      justifyContent: 'center',
-      ...Shadows.card,
-    },
-    splitHandleArrows: {
-      color: '#FFFFFF',
-      fontSize: 13,
-      fontWeight: '800',
-    },
-    splitActionsRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      marginTop: Spacing.md,
-    },
-    splitQuickChip: {
-      paddingVertical: 6,
-      paddingHorizontal: 8,
-      borderRadius: BorderRadius.md,
-      backgroundColor: theme.surfaceSubtle,
-      borderWidth: 1,
-      borderColor: theme.border,
-    },
-    splitQuickChipActive: {
-      borderColor: theme.primary,
-      backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
-    },
-    splitQuickText: {
-      ...Typography.tiny,
-      fontSize: 10,
-      color: theme.textSecondary,
-      fontWeight: '600',
-    },
-    splitQuickTextActive: {
-      color: isDarkMode ? theme.primary : Colors.primaryDark,
-      fontWeight: '700',
-    },
-    uploadPhotoBtn: {
-      flex: 1,
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-      borderRadius: BorderRadius.md,
-      backgroundColor: theme.primary,
-      alignItems: 'center',
-    },
-    uploadPhotoBtnText: {
-      ...Typography.tiny,
-      color: '#FFFFFF',
-      fontWeight: '700',
-    },
     aiInsightCard: {
       backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.08)' : '#ECFDF5',
       borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#A7F3D0',
@@ -892,5 +675,66 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
     exportButtonText: {
       ...Typography.bodyBold,
       color: '#FFFFFF',
+    },
+    /* Weekly Adherence Hero Card */
+    adherenceHeroCard: {
+      borderRadius: BorderRadius.xl,
+      borderWidth: 1,
+      padding: Spacing.lg,
+      marginBottom: Spacing.md,
+      ...Shadows.subtle,
+    },
+    adherenceHeroTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: Spacing.sm,
+    },
+    adherenceBadgeRow: {
+      flexDirection: 'row',
+      marginBottom: 4,
+    },
+    adherenceBadge: {
+      ...Typography.tiny,
+      fontSize: 10,
+      fontWeight: '800',
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 3,
+      borderRadius: BorderRadius.full,
+      letterSpacing: 0.5,
+    },
+    adherenceScoreValue: {
+      ...Typography.h1,
+      fontSize: 26,
+      fontWeight: '800',
+    },
+    adherenceScoreSubtitle: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    adherenceRingMini: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    adherenceRingEmoji: {
+      fontSize: 22,
+    },
+    adherenceTrack: {
+      height: 8,
+      borderRadius: BorderRadius.full,
+      overflow: 'hidden',
+      marginBottom: Spacing.sm,
+    },
+    adherenceFill: {
+      height: '100%',
+      borderRadius: BorderRadius.full,
+    },
+    adherenceMotivationText: {
+      ...Typography.caption,
+      lineHeight: 18,
     },
   });

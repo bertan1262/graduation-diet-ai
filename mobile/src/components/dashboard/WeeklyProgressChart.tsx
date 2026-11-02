@@ -27,7 +27,10 @@ interface DayDataPoint {
 }
 
 export const WeeklyProgressChart: React.FC = () => {
-  const { userProfile, todayMeals, isDarkMode } = useDietStore();
+  const userProfile = useDietStore((state) => state.userProfile);
+  const todayMeals = useDietStore((state) => state.todayMeals);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const dailyHistory = useDietStore((state) => state.dailyHistory);
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = Math.max(240, screenWidth - Spacing.lg * 2 - Spacing.xl * 2 - 4);
 
@@ -58,16 +61,30 @@ export const WeeklyProgressChart: React.FC = () => {
         ? [0.1, 0.0, -0.1, 0.1, 0.0, -0.1, 0]
         : [0.9, 0.7, 0.6, 0.4, 0.3, 0.2, 0];
 
+    const now = new Date();
+    const weekdayFormatter = new Intl.DateTimeFormat('tr-TR', { weekday: 'short' });
+    const baselineCalories = [1980, 2120, 2050, 1920, 2180, 2080];
+
+    const pastDays: DayDataPoint[] = [];
+    for (let i = 6; i >= 1; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const isoDate = new Intl.DateTimeFormat('en-CA').format(d);
+      const recorded = dailyHistory && dailyHistory[isoDate];
+      const cal = recorded ? recorded.calories : baselineCalories[6 - i];
+      const weight = recorded ? recorded.weightKg : parseFloat((curW + offsets[6 - i]).toFixed(1));
+      pastDays.push({
+        day: weekdayFormatter.format(d),
+        calories: cal,
+        weight,
+      });
+    }
+
     return [
-      { day: 'Pzt', calories: 1980, weight: parseFloat((curW + offsets[0]).toFixed(1)) },
-      { day: 'Sal', calories: 2120, weight: parseFloat((curW + offsets[1]).toFixed(1)) },
-      { day: 'Çar', calories: 2050, weight: parseFloat((curW + offsets[2]).toFixed(1)) },
-      { day: 'Per', calories: 1920, weight: parseFloat((curW + offsets[3]).toFixed(1)) },
-      { day: 'Cum', calories: 2180, weight: parseFloat((curW + offsets[4]).toFixed(1)) },
-      { day: 'Cmt', calories: 2080, weight: parseFloat((curW + offsets[5]).toFixed(1)) },
-      { day: 'Bugün', calories: todayCalories, weight: parseFloat((curW + offsets[6]).toFixed(1)) },
+      ...pastDays,
+      { day: 'Bugün', calories: todayCalories, weight: curW },
     ];
-  }, [todayMeals, userProfile.weightKg, userProfile.dietaryGoal]);
+  }, [todayMeals, userProfile.weightKg, userProfile.dietaryGoal, dailyHistory]);
 
   // Extract values based on active metric
   const values =

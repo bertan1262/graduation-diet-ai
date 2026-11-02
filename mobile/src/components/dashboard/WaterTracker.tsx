@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
@@ -23,6 +24,16 @@ export const WaterTracker: React.FC<WaterTrackerProps> = ({
   const progressPercent = Math.min(100, Math.round(progressRatio * 100));
   const remainingMl = Math.max(0, goalMl - currentMl);
   const isGoalReached = currentMl >= goalMl;
+
+  const handleWaterClick = (amount: number) => {
+    const nextMl = currentMl + amount;
+    if (nextMl >= goalMl && currentMl < goalMl) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    onAddWater(amount);
+  };
 
   return (
     <View style={styles.container}>
@@ -73,7 +84,7 @@ export const WaterTracker: React.FC<WaterTrackerProps> = ({
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={styles.waterAddButton}
-          onPress={() => onAddWater(250)}
+          onPress={() => handleWaterClick(250)}
           activeOpacity={0.8}
         >
           <Text style={styles.buttonIcon}>🥛</Text>
@@ -82,7 +93,7 @@ export const WaterTracker: React.FC<WaterTrackerProps> = ({
 
         <TouchableOpacity
           style={styles.waterAddButtonSecondary}
-          onPress={() => onAddWater(500)}
+          onPress={() => handleWaterClick(500)}
           activeOpacity={0.8}
         >
           <Text style={styles.buttonIcon}>🍶</Text>
@@ -92,7 +103,10 @@ export const WaterTracker: React.FC<WaterTrackerProps> = ({
         {currentMl > 0 && (
           <TouchableOpacity
             style={styles.undoButton}
-            onPress={() => onAddWater(-250)}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+              onAddWater(-250);
+            }}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
