@@ -73,7 +73,7 @@ const isMockEnabled = (): boolean => {
   } catch {
     // If invoked before Zustand hydration
   }
-  return process.env.EXPO_PUBLIC_USE_MOCK_DATA !== 'false';
+  return process.env.EXPO_PUBLIC_USE_MOCK_DATA === 'true';
 };
 
 const MEDICAL_GUARDRAIL_KEYWORDS = [
@@ -95,7 +95,7 @@ export function isMedicalQuery(text: string): boolean {
   return MEDICAL_GUARDRAIL_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-// Network timeout helper with automatic 401 token cleanup
+// Network timeout helper
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
@@ -106,14 +106,66 @@ async function fetchWithTimeout(
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timer);
-    if (res.status === 401) {
-      await secureStorage.clearAuthToken();
-    }
     return res;
   } catch (error) {
     clearTimeout(timer);
     throw error;
   }
+}
+
+/**
+ * Rotates the access token using the hardware-stored refresh token.
+ * Returns true on success; clears the stale session on any failure.
+ */
+async function tryRefreshSession(): Promise<boolean> {
+  const refreshToken = await secureStorage.getRefreshToken();
+  if (!refreshToken) return false;
+  try {
+    const baseUrl = resolveApiBaseUrl();
+    const res = await fetchWithTimeout(
+      `${baseUrl}/auth/refresh`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      },
+      6000
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data.access_token === 'string') {
+        await secureStorage.setAuthToken(data.access_token);
+        if (data.refresh_token) {
+          await secureStorage.setRefreshToken(data.refresh_token);
+        }
+        return true;
+      }
+    }
+    await secureStorage.clearAuthToken();
+    return false;
+  } catch {
+    await secureStorage.clearAuthToken();
+    return false;
+  }
+}
+
+/**
+ * Bearer-authenticated request that retries once with a fresh token on 401.
+ */
+async function authorizedFetch(
+  url: string,
+  options: RequestInit,
+  timeoutMs = 8000
+): Promise<Response> {
+  const firstHeaders = await buildRequestHeaders();
+  const first = await fetchWithTimeout(url, { ...options, headers: firstHeaders }, timeoutMs);
+  if (first.status !== 401) return first;
+
+  const refreshed = await tryRefreshSession();
+  if (!refreshed) return first;
+
+  const retryHeaders = await buildRequestHeaders();
+  return fetchWithTimeout(url, { ...options, headers: retryHeaders }, timeoutMs);
 }
 
 // Mock data to enable instant parallel mobile UI development & offline reliability
@@ -183,109 +235,28 @@ export const apiService = {
     await secureStorage.clearAuthToken();
   },
 
-  /**
-   * Analyze food image from camera/gallery with Gemini 2.5 Flash Vision & Offline Fallback
-   */
-  async analyzeFoodImage(imageBase64: string): Promise<RecognitionResponse> {
-    const geminiApiKey = (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '').trim();
-
-    // 1. Direct Gemini Vision call if API key is provided and mock mode is not forced
-    if (geminiApiKey && !isMockEnabled()) {
-      try {
-        const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
-
-        const promptText = `Sen uzman bir diyetisyen ve besin analizi yapay zekâsısın. Bu fotoğraftaki yemeği ve tabağı dikkatle incele.
-Aşağıdaki JSON şemasına BİREBİR uyacak şekilde YALNIZCA geçerli bir JSON nesnesi döndür:
-{
-  "timestamp": "${new Date().toISOString()}",
-  "detectedFoods": [
-    {
-      "id": "f-1",
-      "foodName": "Yemek Adı (Türkçe)",
-      "portionGrams": 150,
-      "confidenceScore": 0.95,
-      "nutrition": {
-        "calories": 250,
-        "proteinGrams": 20.0,
-        "carbsGrams": 15.0,
-        "fatGrams": 8.0,
-        "fiberGrams": 3.0,
-        "sugarGrams": 2.0,
-        "sodiumMg": 300
-      }
-    }
-  ],
-  "totalNutrition": {
-    "calories": 250,
-    "proteinGrams": 20.0,
-    "carbsGrams": 15.0,
-    "fatGrams": 8.0,
-    "fiberGrams": 3.0,
-    "sugarGrams": 2.0,
-    "sodiumMg": 300
-  },
-  "disclaimer": "Porsiyon ve kalori tahminleri yapay zekâ modelince yapılmıştır; tıbbi tanı veya reçete yerine geçmez."
-}
-Hiçbir markdown etiketi (\`\`\`json) ekleme, sadece saf JSON döndür.`;
-
-        const requestBody = {
-          contents: [
-            {
-              parts: [
-                { text: promptText },
-                {
-                  inline_data: {
-                    mime_type: 'image/jpeg',
-                    data: cleanBase64,
-                  },
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.2,
-            response_mime_type: 'application/json',
-          },
-        };
-
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-        });
-
-        if (res.ok) {
-          const json = await res.json();
-          const textOutput = json.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (textOutput) {
-            const parsed: RecognitionResponse = JSON.parse(textOutput);
-            if (parsed && parsed.detectedFoods && parsed.detectedFoods.length > 0) {
-              return parsed;
-            }
-          }
-        }
-      } catch (geminiErr) {
-        console.warn('Direct Gemini Vision failed, attempting backend or fallback:', geminiErr);
-      }
-    }
-
+  /** Analyzes a food image through the official backend pipeline. */
+  async analyzeFoodImage(imageBase64OrDataUrl: string): Promise<RecognitionResponse> {
     if (isMockEnabled()) {
       await new Promise((r) => setTimeout(r, 1200));
       return MOCK_RECOGNITION;
     }
 
+    if (imageBase64OrDataUrl.includes('://')) {
+      throw new Error('Analize geçerli bir base64 görsel gönderilmedi.');
+    }
+
+    const cleanBase64 = imageBase64OrDataUrl.replace(/^data:image\/\w+;base64,/, '');
+    const baseUrl = resolveApiBaseUrl();
+
     try {
-      const baseUrl = resolveApiBaseUrl();
-      const headers = await buildRequestHeaders();
-      const response = await fetchWithTimeout(
+      const response = await authorizedFetch(
         `${baseUrl}/nutrition/analyze-photo`,
         {
           method: 'POST',
-          headers,
-          body: JSON.stringify({ image_base64: imageBase64 }),
+          body: JSON.stringify({ image_base64: cleanBase64 }),
         },
-        10000
+        15000
       );
 
       if (!response.ok) {
@@ -293,8 +264,8 @@ Hiçbir markdown etiketi (\`\`\`json) ekleme, sadece saf JSON döndür.`;
       }
       return await response.json();
     } catch (err) {
-      console.warn('Live API call failed, falling back to deterministic mock data:', err);
-      return MOCK_RECOGNITION;
+      console.warn('[analyzeFoodImage] Live API failed:', err);
+      throw new Error('AI tabağınıza şu anda ulaşamadı. Bağlantınızı kontrol edip tekrar deneyin.');
     }
   },
 
@@ -331,12 +302,10 @@ Hiçbir markdown etiketi (\`\`\`json) ekleme, sadece saf JSON döndür.`;
 
     try {
       const baseUrl = resolveApiBaseUrl();
-      const headers = await buildRequestHeaders();
-      const response = await fetchWithTimeout(
+      const response = await authorizedFetch(
         `${baseUrl}/chat/message`,
         {
           method: 'POST',
-          headers,
           body: JSON.stringify({ message: messageText, context }),
         },
         8000
@@ -355,24 +324,8 @@ Hiçbir markdown etiketi (\`\`\`json) ekleme, sadece saf JSON döndür.`;
         safety_flag_triggered: isWarning,
       };
     } catch (err) {
-      console.warn('Chat API failed, falling back to offline context-aware response:', err);
-      if (medicalTriggered) {
-        return {
-          id: `msg-${Date.now()}`,
-          sender: 'assistant',
-          content:
-            'Sağlığınız her şeyden önemlidir. DietAI genel beslenme ve kalori rehberliği sunar; tıbbi tanı koyamaz ve ilaç tedavisi öneremez. Lütfen bu durumu mutlaka hekiminize veya uzman bir klinik diyetisyene danışınız.',
-          timestamp: new Date().toISOString(),
-          isMedicalWarning: true,
-          safety_flag_triggered: true,
-        };
-      }
-      return {
-        id: `msg-${Date.now()}`,
-        sender: 'assistant',
-        content: generateContextualMockDietitianReply(messageText, context),
-        timestamp: new Date().toISOString(),
-      };
+      console.warn('[sendChatMessage] Live API failed:', err);
+      throw err;
     }
   },
 
@@ -383,20 +336,20 @@ Hiçbir markdown etiketi (\`\`\`json) ekleme, sadece saf JSON döndür.`;
     if (!isMockEnabled()) {
       try {
         const baseUrl = resolveApiBaseUrl();
-        const headers = await buildRequestHeaders();
-        const response = await fetchWithTimeout(
+        const response = await authorizedFetch(
           `${baseUrl}/nutrition/meal-plan`,
           {
             method: 'GET',
-            headers,
           },
           5000
         );
         if (response.ok) {
           return await response.json();
         }
+        throw new Error(`Meal plan API error: ${response.status}`);
       } catch (err) {
-        console.warn('Meal plan API failed, using fallback plan:', err);
+        console.warn('Meal plan API failed:', err);
+        throw err;
       }
     }
 

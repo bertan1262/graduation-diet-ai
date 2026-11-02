@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -33,6 +33,12 @@
         {
           "cameraPermission": "Allow DietAI to access your camera for food recognition.",
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DietAI yemek fotoğraflarınızı analiz etmek için galerinize erişir."
         }
       ],
       "expo-secure-store",

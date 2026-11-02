@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -60,9 +60,11 @@ export const ProfileScreen: React.FC = () => {
     return { points: pointsStr, dots: points };
   }, [weeklyWeightLogs]);
 
-  useEffect(() => {
+  const [prevWeightKg, setPrevWeightKg] = useState(userProfile.weightKg);
+  if (prevWeightKg !== userProfile.weightKg) {
+    setPrevWeightKg(userProfile.weightKg);
     setWeeklyInputKg(String(userProfile.weightKg));
-  }, [userProfile.weightKg]);
+  }
 
   // BMI (Body Mass Index) Calculation
   const bmiData = useMemo(() => {
@@ -1098,7 +1100,7 @@ export const ProfileScreen: React.FC = () => {
 
       {/* App Version & Credits Footer */}
       <View style={styles.footerContainer}>
-        <Text style={styles.footerBrand}>DietAI Mobile • v1.0.0 (Expo SDK 52)</Text>
+        <Text style={styles.footerBrand}>DietAI Mobile • v1.0.0 (Expo SDK 58)</Text>
         <Text style={styles.footerSub}>Mifflin-St Jeor & Gemini Flash Hibrit Beslenme Motoru</Text>
         <Text style={styles.footerCredits}>Bertan Beyal • Bitirme Tezi Projesi</Text>
       </View>

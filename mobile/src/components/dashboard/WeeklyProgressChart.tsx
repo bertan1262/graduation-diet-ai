@@ -49,21 +49,9 @@ export const WeeklyProgressChart: React.FC = () => {
       : parseFloat((curWeight - 3).toFixed(1)));
 
   const weeklyData: DayDataPoint[] = useMemo(() => {
-    const todayCalories = todayMeals.reduce((acc, m) => acc + m.calories, 0);
     const curW = userProfile.weightKg || 75.6;
-    const goal = userProfile.dietaryGoal;
-
-    // Offsets relative to today's real profile weight based on dietary goal
-    const offsets =
-      goal === 'muscle_gain'
-        ? [-0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0]
-        : goal === 'maintenance'
-        ? [0.1, 0.0, -0.1, 0.1, 0.0, -0.1, 0]
-        : [0.9, 0.7, 0.6, 0.4, 0.3, 0.2, 0];
-
     const now = new Date();
     const weekdayFormatter = new Intl.DateTimeFormat('tr-TR', { weekday: 'short' });
-    const baselineCalories = [1980, 2120, 2050, 1920, 2180, 2080];
 
     const pastDays: DayDataPoint[] = [];
     for (let i = 6; i >= 1; i--) {
@@ -71,20 +59,17 @@ export const WeeklyProgressChart: React.FC = () => {
       d.setDate(now.getDate() - i);
       const isoDate = new Intl.DateTimeFormat('en-CA').format(d);
       const recorded = dailyHistory && dailyHistory[isoDate];
-      const cal = recorded ? recorded.calories : baselineCalories[6 - i];
-      const weight = recorded ? recorded.weightKg : parseFloat((curW + offsets[6 - i]).toFixed(1));
+      if (!recorded) continue;
       pastDays.push({
         day: weekdayFormatter.format(d),
-        calories: cal,
-        weight,
+        calories: recorded.calories,
+        weight: recorded.weightKg ?? curW,
       });
     }
 
-    return [
-      ...pastDays,
-      { day: 'Bugün', calories: todayCalories, weight: curW },
-    ];
-  }, [todayMeals, userProfile.weightKg, userProfile.dietaryGoal, dailyHistory]);
+    const todayCalories = todayMeals.reduce((acc, m) => acc + m.calories, 0);
+    return [...pastDays, { day: 'Bugün', calories: todayCalories, weight: curW }];
+  }, [todayMeals, userProfile.weightKg, dailyHistory]);
 
   // Extract values based on active metric
   const values =
@@ -111,6 +96,7 @@ export const WeeklyProgressChart: React.FC = () => {
 
   const getX = (index: number) => {
     const innerWidth = Math.max(100, chartWidth - PADDING_X * 2);
+    if (weeklyData.length <= 1) return PADDING_X + innerWidth / 2;
     return PADDING_X + (index / (weeklyData.length - 1)) * innerWidth;
   };
 
@@ -181,122 +167,128 @@ export const WeeklyProgressChart: React.FC = () => {
         </View>
       </View>
 
-      {/* SVG Canvas Area */}
-      <View style={styles.chartWrapper}>
-        <Svg width={chartWidth} height={CHART_HEIGHT}>
-          <Defs>
-            <LinearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-              <Stop
-                offset="0%"
-                stopColor={metric === 'calories' ? theme.primary : theme.protein}
-                stopOpacity={isDarkMode ? 0.35 : 0.28}
-              />
-              <Stop
-                offset="100%"
-                stopColor={metric === 'calories' ? theme.primary : theme.protein}
-                stopOpacity={0.0}
-              />
-            </LinearGradient>
-          </Defs>
+      {weeklyData.length >= 2 ? (
+        <>
+          {/* SVG Canvas Area */}
+          <View style={styles.chartWrapper}>
+            <Svg width={chartWidth} height={CHART_HEIGHT}>
+              <Defs>
+                <LinearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                  <Stop
+                    offset="0%"
+                    stopColor={metric === 'calories' ? theme.primary : theme.protein}
+                    stopOpacity={isDarkMode ? 0.35 : 0.28}
+                  />
+                  <Stop
+                    offset="100%"
+                    stopColor={metric === 'calories' ? theme.primary : theme.protein}
+                    stopOpacity={0.0}
+                  />
+                </LinearGradient>
+              </Defs>
 
-          {/* Target Guideline */}
-          {targetY >= 0 && targetY <= CHART_HEIGHT && (
-            <>
-              <Line
-                x1={PADDING_X - 8}
-                y1={targetY}
-                x2={chartWidth - PADDING_X + 8}
-                y2={targetY}
-                stroke={isDarkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(15, 23, 42, 0.2)'}
-                strokeWidth={1}
-                strokeDasharray="4 4"
-              />
-              <SvgText
-                x={chartWidth - PADDING_X}
-                y={targetY < 20 ? targetY + 13 : targetY - 6}
-                fontSize={9}
-                fill={theme.textMuted}
-                textAnchor="end"
-                fontWeight="600"
-              >
-                Hedef: {targetVal} {metric === 'calories' ? 'kcal' : 'kg'}
-              </SvgText>
-            </>
-          )}
-
-          {/* Area Fill */}
-          <Path d={areaPath} fill="url(#chartGradient)" />
-
-          {/* Main Trend Line */}
-          <Path
-            d={linePath}
-            fill="none"
-            stroke={metric === 'calories' ? theme.primary : theme.protein}
-            strokeWidth={3}
-            strokeLinecap="round"
-          />
-
-          {/* Data Points / Nodes */}
-          {points.map((pt, i) => {
-            const isToday = i === points.length - 1;
-            const anchor = i === 0 ? 'start' : isToday ? 'end' : 'middle';
-            const labelX = i === 0 ? pt.x - 4 : isToday ? pt.x + 4 : pt.x;
-            return (
-              <React.Fragment key={`pt-${i}`}>
-                {/* Node circle */}
-                <Circle
-                  cx={pt.x}
-                  cy={pt.y}
-                  r={isToday ? 6 : 4}
-                  fill={isToday ? (metric === 'calories' ? theme.primary : theme.protein) : theme.surface}
-                  stroke={metric === 'calories' ? theme.primary : theme.protein}
-                  strokeWidth={2}
-                />
-
-                {/* Value on peak nodes */}
-                {(i === 0 || i === 3 || isToday) && (
+              {/* Target Guideline */}
+              {targetY >= 0 && targetY <= CHART_HEIGHT && (
+                <>
+                  <Line
+                    x1={PADDING_X - 8}
+                    y1={targetY}
+                    x2={chartWidth - PADDING_X + 8}
+                    y2={targetY}
+                    stroke={isDarkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(15, 23, 42, 0.2)'}
+                    strokeWidth={1}
+                    strokeDasharray="4 4"
+                  />
                   <SvgText
-                    x={labelX}
-                    y={pt.y - 10}
-                    fontSize={10}
-                    fontWeight="700"
-                    fill={theme.textPrimary}
-                    textAnchor={anchor}
+                    x={chartWidth - PADDING_X}
+                    y={targetY < 20 ? targetY + 13 : targetY - 6}
+                    fontSize={9}
+                    fill={theme.textMuted}
+                    textAnchor="end"
+                    fontWeight="600"
                   >
-                    {metric === 'calories' ? pt.val : `${pt.val} kg`}
+                    Hedef: {targetVal} {metric === 'calories' ? 'kcal' : 'kg'}
                   </SvgText>
-                )}
-              </React.Fragment>
-            );
-          })}
-        </Svg>
-      </View>
+                </>
+              )}
 
-      {/* Weekday Axis Labels */}
-      <View style={styles.axisLabelsRow}>
-        {weeklyData.map((d, i) => (
-          <Text
-            key={d.day}
-            style={[
-              styles.axisLabel,
-              i === weeklyData.length - 1 && styles.axisLabelToday,
-            ]}
-          >
-            {d.day}
+              {/* Area Fill */}
+              <Path d={areaPath} fill="url(#chartGradient)" />
+
+              {/* Main Trend Line */}
+              <Path
+                d={linePath}
+                fill="none"
+                stroke={metric === 'calories' ? theme.primary : theme.protein}
+                strokeWidth={3}
+                strokeLinecap="round"
+              />
+
+              {/* Data Points / Nodes */}
+              {points.map((pt, i) => {
+                const isToday = i === points.length - 1;
+                const anchor = i === 0 ? 'start' : isToday ? 'end' : 'middle';
+                const labelX = i === 0 ? pt.x - 4 : isToday ? pt.x + 4 : pt.x;
+                return (
+                  <React.Fragment key={`pt-${i}`}>
+                    {/* Node circle */}
+                    <Circle
+                      cx={pt.x}
+                      cy={pt.y}
+                      r={isToday ? 6 : 4}
+                      fill={isToday ? (metric === 'calories' ? theme.primary : theme.protein) : theme.surface}
+                      stroke={metric === 'calories' ? theme.primary : theme.protein}
+                      strokeWidth={2}
+                    />
+
+                    {/* Value on peak nodes */}
+                    {(i === 0 || i === 3 || isToday) && (
+                      <SvgText
+                        x={labelX}
+                        y={pt.y - 10}
+                        fontSize={10}
+                        fontWeight="700"
+                        fill={theme.textPrimary}
+                        textAnchor={anchor}
+                      >
+                        {metric === 'calories' ? pt.val : `${pt.val} kg`}
+                      </SvgText>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </Svg>
+          </View>
+
+          {/* Weekday Axis Labels */}
+          <View style={styles.axisLabelsRow}>
+            {weeklyData.map((d, i) => (
+              <Text
+                key={d.day}
+                style={[
+                  styles.axisLabel,
+                  i === weeklyData.length - 1 && styles.axisLabelToday,
+                ]}
+              >
+                {d.day}
+              </Text>
+            ))}
+          </View>
+        </>
+      ) : (
+        <View style={[styles.chartWrapper, { justifyContent: 'center', alignItems: 'center', minHeight: 140, paddingHorizontal: Spacing.md }]}>
+          <Text style={{ ...Typography.caption, color: theme.textMuted, textAlign: 'center' }}>
+            📈 Grafiği görmek için en az 2 günlük gerçek kayıt gerekir — ilk gününüzü tamamladıkça burada görünecek.
           </Text>
-        ))}
-      </View>
+        </View>
+      )}
 
       {/* Motivational insight footer */}
       <View style={styles.insightBox}>
         <Text style={styles.insightText}>
           {metric === 'calories'
-            ? '🔥 7 günün 5 gününde kalori hedefinizi tutturdunuz! Dengeli beslenme disiplini harika gidiyor.'
-            : userProfile.dietaryGoal === 'muscle_gain'
-            ? '💪 Kilonuz haftalık +0.3 kg temiz kas kazanımı ritminde ilerliyor. Pozitif kalori dengesi korunuyor.'
-            : userProfile.dietaryGoal === 'maintenance'
-            ? '⚖️ Kilonuz haftalık koruma bandında (±0.1 kg) dengeli seyrediyor. Form koruma hedefinize tam uyum sağlıyorsunuz.'
-            : '🎯 Kilonuz haftalık -0.3 kg sağlıklı ritimde ilerliyor. Kas kaybı olmadan yağ yakımı sürüyor.'}
+            ? '🔥 Grafik yalnız kayıtlı günlerinizin gerçek kalori verilerini gösterir; hedef çizgisiyle karşılaştırarak güçlü ve eksik günleri görebilirsiniz.'
+            : '⚖️ Kilo eğilimi yalnızca güne kaydettiğiniz gerçek tartı ölçümleri üzerinden çizilir.'}
         </Text>
       </View>
     </View>

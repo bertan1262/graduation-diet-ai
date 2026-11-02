@@ -804,7 +804,7 @@ export const MealPlanScreen: React.FC = () => {
         ]}
       >
         <Text style={[styles.footerInfoText, isDarkMode && { color: '#93C5FD' }]}>
-          💡 Beğenmediğiniz bir öğünü "Alternatif Sun" butonuyla anında değiştirebilirsiniz. Tüm alternatifler kayıtlı alerjilerinize ve hedeflerinize %100 uygundur.
+          {'💡 Beğenmediğiniz bir öğünü "Alternatif Sun" butonuyla anında değiştirebilirsiniz. Tüm alternatifler kayıtlı alerjilerinize ve hedeflerinize %100 uygundur.'}
         </Text>
       </View>
     </ScrollView>

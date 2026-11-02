@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,8 +8,6 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  PanResponder,
-  Animated,
 } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
@@ -44,6 +42,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
 }) => {
   const userProfile = useDietStore((state) => state.userProfile);
   const updateProfile = useDietStore((state) => state.updateProfile);
+  const startFreshUserSession = useDietStore((state) => state.startFreshUserSession);
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const toggleDarkMode = useDietStore((state) => state.toggleDarkMode);
   const theme = getThemeColors(isDarkMode);
@@ -357,8 +356,6 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   useEffect(() => {
     if (stage !== 'calculating') return;
 
-    setCalcProgress(0);
-
     // Fire authoritative BMR calculation request in parallel
     apiService
       .calculateBMR({
@@ -401,7 +398,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
     }, 65);
 
     return () => clearInterval(interval);
-  }, [stage]);
+  }, [stage, gender, doesSports, sportsDaysPerWeek, calculationBasis, dietaryGoal, hasDiabetes, hasCholesterol, hasHypertension, calculatedMetrics]);
 
   // Automatically transition from 'calculating' (100%) to 'summary'
   useEffect(() => {
@@ -414,6 +411,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   }, [stage, calcProgress]);
 
   const handleFinalizeAndStart = () => {
+    // Clean fabricated demo data for a genuinely-first-onboarding user
+    startFreshUserSession();
+
     updateProfile({
       name: name.trim() || 'Kullanıcı',
       gender,
@@ -460,6 +460,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
     if (step < TOTAL_WIZARD_STEPS - 1) {
       setStep(step + 1);
     } else {
+      setCalcProgress(0);
       setStage('calculating');
     }
   };
@@ -943,7 +944,6 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   // ============================================================================
   // STAGE 2: 6-STEP ONBOARDING WIZARD (Top Progress Bar + Back Arrow)
   // ============================================================================
-  const progressPercent = ((step + 1) / TOTAL_WIZARD_STEPS) * 100;
 
   return (
     <KeyboardAvoidingView

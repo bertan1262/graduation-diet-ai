@@ -51,20 +51,6 @@ export const MOCK_BARCODE_PRODUCTS: Record<string, OpenFoodFactsProduct> = {
   },
 };
 
-const DEFAULT_FALLBACK: OpenFoodFactsProduct = {
-  barcode: '8690637012345',
-  name: 'Sütaş Protein Sütü (330ml - Çikolatalı)',
-  brand: 'Sütaş',
-  imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80',
-  servingGrams: 330,
-  nutrition: {
-    calories: 198,
-    proteinGrams: 26.4,
-    carbsGrams: 14.8,
-    fatGrams: 1.6,
-    fiberGrams: 0.5,
-  },
-};
 
 /**
  * Queries Open Food Facts API (v2) for barcode details with a 4-second timeout.

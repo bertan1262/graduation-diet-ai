@@ -66,6 +66,7 @@ interface DietStoreState {
   setDarkMode: (enabled: boolean) => void;
   setHasHydrated: (state: boolean) => void;
   setHasCompletedOnboarding: (completed: boolean) => void;
+  startFreshUserSession: () => void;
   checkAndRollOverDay: () => void;
   addChatMessage: (message: ChatMessage) => void;
   clearChatMessages: () => void;
@@ -107,7 +108,8 @@ export const useDietStore = create<DietStoreState>()(
       pendingAnalysis: { status: 'idle' },
       customRecipes: INITIAL_CUSTOM_RECIPES,
       weeklyWeightLogs: INITIAL_WEEKLY_WEIGHT_LOGS,
-      useMockData: true,
+      // Mock is opt-in only: via .env flag or the Profile toggle.
+      useMockData: process.env.EXPO_PUBLIC_USE_MOCK_DATA === 'true',
       isDarkMode: false,
       hasHydrated: false,
       hasCompletedOnboarding: false,
@@ -120,6 +122,18 @@ export const useDietStore = create<DietStoreState>()(
       setDarkMode: (enabled) => set({ isDarkMode: enabled }),
       setHasHydrated: (state) => set({ hasHydrated: state }),
       setHasCompletedOnboarding: (completed) => set({ hasCompletedOnboarding: completed }),
+      // Clears fabricated demo intake data so a genuinely onboarded user starts clean
+      startFreshUserSession: () => {
+        const todayDate = new Intl.DateTimeFormat('en-CA').format(new Date());
+        set({
+          todayMeals: [],
+          waterIntakeMl: 0,
+          streakDays: 1,
+          chatMessages: INITIAL_CHAT_MESSAGES,
+          customRecipes: [],
+          lastActiveDate: todayDate,
+        });
+      },
       setCustomWeekPlan: (plan) => set({ customWeekPlan: plan }),
       updateDayMeal: (dayIndex, mealType, meal) =>
         set((state) => {

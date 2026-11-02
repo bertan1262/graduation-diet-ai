@@ -26,6 +26,7 @@ interface DayHistoryItem {
   fat: number;
   waterMl: number;
   isToday?: boolean;
+  hasData?: boolean;
 }
 
 export const AnalyticsScreen: React.FC = () => {
@@ -50,7 +51,6 @@ export const AnalyticsScreen: React.FC = () => {
     const todayCarbs = Math.round(todayMeals.reduce((acc, m) => acc + m.carbsGrams, 0));
     const todayFat = Math.round(todayMeals.reduce((acc, m) => acc + m.fatGrams, 0));
 
-    const target = userProfile.targetCalories || 2100;
     const now = new Date();
     const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
       day: 'numeric',
@@ -58,24 +58,15 @@ export const AnalyticsScreen: React.FC = () => {
     });
     const weekdayFormatter = new Intl.DateTimeFormat('tr-TR', { weekday: 'short' });
 
-    const historicalTemplates = [
-      { calRatio: 0.94, protein: 110, carbs: 180, fat: 55, waterMl: 2500 },
-      { calRatio: 1.02, protein: 135, carbs: 195, fat: 62, waterMl: 2750 },
-      { calRatio: 0.98, protein: 125, carbs: 170, fat: 58, waterMl: 2250 },
-      { calRatio: 0.91, protein: 105, carbs: 160, fat: 50, waterMl: 3000 },
-      { calRatio: 1.05, protein: 140, carbs: 210, fat: 65, waterMl: 2500 },
-      { calRatio: 0.99, protein: 130, carbs: 190, fat: 60, waterMl: 2000 },
-    ];
-
-    const pastDays: DayHistoryItem[] = historicalTemplates.map((tpl, idx) => {
-      const daysAgo = 6 - idx;
+    const pastDays: DayHistoryItem[] = [];
+    for (let daysAgo = 6; daysAgo >= 1; daysAgo--) {
       const d = new Date(now);
       d.setDate(now.getDate() - daysAgo);
       const isoDate = new Intl.DateTimeFormat('en-CA').format(d);
       const recorded = dailyHistory && dailyHistory[isoDate];
 
       if (recorded) {
-        return {
+        pastDays.push({
           dayLabel: weekdayFormatter.format(d),
           dateStr: dateFormatter.format(d),
           calories: recorded.calories,
@@ -83,19 +74,21 @@ export const AnalyticsScreen: React.FC = () => {
           carbs: recorded.carbsGrams,
           fat: recorded.fatGrams,
           waterMl: recorded.waterMl,
-        };
+          hasData: true,
+        });
+      } else {
+        pastDays.push({
+          dayLabel: weekdayFormatter.format(d),
+          dateStr: dateFormatter.format(d),
+          calories: 0,
+          protein: 0,
+          carbs: 0,
+          fat: 0,
+          waterMl: 0,
+          hasData: false,
+        });
       }
-
-      return {
-        dayLabel: weekdayFormatter.format(d),
-        dateStr: dateFormatter.format(d),
-        calories: Math.round(target * tpl.calRatio),
-        protein: tpl.protein,
-        carbs: tpl.carbs,
-        fat: tpl.fat,
-        waterMl: tpl.waterMl,
-      };
-    });
+    }
 
     return [
       ...pastDays,
@@ -108,27 +101,30 @@ export const AnalyticsScreen: React.FC = () => {
         fat: todayFat,
         waterMl: waterIntakeMl,
         isToday: true,
+        hasData: true,
       },
     ];
-  }, [todayMeals, waterIntakeMl, userProfile.targetCalories]);
+  }, [todayMeals, waterIntakeMl, dailyHistory]);
 
   const selectedDay = weeklyData[selectedDayIndex] || weeklyData[6];
 
   // Weekly aggregates
+  const daysWithData = weeklyData.filter((d) => d.hasData !== false);
+  const dataCount = daysWithData.length || 1;
   const avgCalories = Math.round(
-    weeklyData.reduce((acc, d) => acc + d.calories, 0) / weeklyData.length
+    daysWithData.reduce((acc, d) => acc + d.calories, 0) / dataCount
   );
   const targetCal = userProfile.targetCalories || 2100;
   const adherenceRate = Math.min(
     100,
     Math.round(
-      (weeklyData.filter((d) => Math.abs(d.calories - targetCal) <= 250).length /
-        weeklyData.length) *
+      (daysWithData.filter((d) => Math.abs(d.calories - targetCal) <= 250).length /
+        dataCount) *
         100
     )
   );
   const waterGoal = userProfile.waterGoalMl || 2500;
-  const waterDisciplineCount = weeklyData.filter((d) => d.waterMl >= waterGoal * 0.8).length;
+  const waterDisciplineCount = daysWithData.filter((d) => d.waterMl >= waterGoal * 0.8).length;
 
   // Macro percentages for selected day
   const totalMacroGrams = selectedDay.protein + selectedDay.carbs + selectedDay.fat;
@@ -292,7 +288,7 @@ export const AnalyticsScreen: React.FC = () => {
               </Text>{' '}
               •{' '}
               <Text style={{ color: theme.primary, fontWeight: '700' }}>
-                {selectedDay.calories} kcal
+                {selectedDay.hasData === false ? 'Kayıt yok' : `${selectedDay.calories} kcal`}
               </Text>
             </Text>
           </View>
@@ -328,20 +324,24 @@ export const AnalyticsScreen: React.FC = () => {
               const barWidth = 26;
               const slotWidth = chartWidth / weeklyData.length;
               const x = slotWidth * index + (slotWidth - barWidth) / 2;
-              const barHeight = Math.max(8, (d.calories / maxCal) * chartHeightInner);
+              const barHeight =
+                d.hasData === false ? 10 : Math.max(8, (d.calories / maxCal) * chartHeightInner);
               const y = chartHeightInner - barHeight;
               const isSelected = index === selectedDayIndex;
 
               const isWithinTarget = Math.abs(d.calories - targetCal) <= 200;
-              const barColor = isSelected
-                ? theme.primary
-                : isWithinTarget
-                ? isDarkMode
-                  ? '#10B981'
-                  : Colors.primary
-                : d.calories > targetCal
-                ? theme.calories
-                : theme.protein;
+              const barColor =
+                d.hasData === false
+                  ? theme.border
+                  : isSelected
+                  ? theme.primary
+                  : isWithinTarget
+                  ? isDarkMode
+                    ? '#10B981'
+                    : Colors.primary
+                  : d.calories > targetCal
+                  ? theme.calories
+                  : theme.protein;
 
               return (
                 <React.Fragment key={`bar-${index}`}>
@@ -366,7 +366,7 @@ export const AnalyticsScreen: React.FC = () => {
                     height={barHeight}
                     rx={6}
                     fill={barColor}
-                    opacity={isSelected ? 1 : 0.75}
+                    opacity={d.hasData === false ? 0.35 : isSelected ? 1 : 0.75}
                     onPress={() => {
                       Haptics.selectionAsync().catch(() => {});
                       setSelectedDayIndex(index);

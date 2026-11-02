@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -71,23 +71,23 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
     baseSodium: 220,
   });
 
-  useEffect(() => {
-    if (meal) {
-      const g = meal.portionGrams || 150;
-      setPortionGrams(g);
-      setMealType(meal.mealType);
-      setBaseRatio({
-        baseGrams: g,
-        baseCalories: meal.calories,
-        baseProtein: meal.proteinGrams,
-        baseCarbs: meal.carbsGrams,
-        baseFat: meal.fatGrams,
-        baseFiber: meal.fiberGrams ?? Math.round((meal.carbsGrams || 0) * 0.14 * 10) / 10,
-        baseSugar: meal.sugarGrams ?? Math.round((meal.carbsGrams || 0) * 0.11 * 10) / 10,
-        baseSodium: meal.sodiumMg ?? Math.round((meal.calories || 100) * 1.1),
-      });
-    }
-  }, [meal]);
+  const [syncedMealId, setSyncedMealId] = useState<string | null>(meal?.id ?? null);
+  if (meal && meal.id !== syncedMealId) {
+    setSyncedMealId(meal.id);
+    const g = meal.portionGrams || 150;
+    setPortionGrams(g);
+    setMealType(meal.mealType);
+    setBaseRatio({
+      baseGrams: g,
+      baseCalories: meal.calories,
+      baseProtein: meal.proteinGrams,
+      baseCarbs: meal.carbsGrams,
+      baseFat: meal.fatGrams,
+      baseFiber: meal.fiberGrams ?? Math.round((meal.carbsGrams || 0) * 0.14 * 10) / 10,
+      baseSugar: meal.sugarGrams ?? Math.round((meal.carbsGrams || 0) * 0.11 * 10) / 10,
+      baseSodium: meal.sodiumMg ?? Math.round((meal.calories || 100) * 1.1),
+    });
+  }
 
   // Scaled calculations based on user adjusted grams
   const scale = baseRatio.baseGrams > 0 ? portionGrams / baseRatio.baseGrams : 1;

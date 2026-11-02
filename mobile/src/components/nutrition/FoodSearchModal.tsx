@@ -545,7 +545,7 @@ export const FoodSearchModal: React.FC<FoodSearchModalProps> = ({
                     <ActivityIndicator size="small" color={theme.primary} />
                   ) : (
                     <Text style={styles.onlineSearchButtonText}>
-                      🌐 Open Food Facts'te "{searchQuery}" Ara
+                      {`🌐 Open Food Facts'te "${searchQuery}" Ara`}
                     </Text>
                   )}
                 </TouchableOpacity>

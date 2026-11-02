@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -203,10 +203,15 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
         }
       }
 
-      // Fail-safe fallback: If native camera hardware stalled or runs on simulator, guarantee 100% laser scan success
+      // Fail-safe: demo görseli yalnızca mock modda kullan; canlı modda sessiz fake veri yok.
       if (!imageUri) {
-        imageUri =
-          'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1000&q=80';
+        if (useDietStore.getState().useMockData) {
+          imageUri =
+            'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1000&q=80';
+        } else {
+          Alert.alert('Kamera Hatası', 'Kamera görüntüsü alınamadı. Lütfen tekrar deneyin.');
+          return;
+        }
       }
 
       // Compress and optimize image to 1024px, 0.7 JPEG
@@ -364,15 +369,34 @@ export const CameraScreen: React.FC<CameraScreenProps> = ({
 
   // Handle Scan Complete: Await any pending recognition before launching FoodAnalysisModal
   const handleScanComplete = async () => {
+    let analysis: RecognitionResponse | void | undefined;
     if (recognitionPromiseRef.current) {
       try {
-        await recognitionPromiseRef.current;
-      } catch {
-        // Handled in catch above
+        analysis = await recognitionPromiseRef.current;
+      } catch (err) {
+        console.warn('Food recognition error:', err);
+        analysis = undefined;
       }
       recognitionPromiseRef.current = null;
     }
+
+    const hasResults =
+      Boolean(analysis) && Boolean((analysis as RecognitionResponse).detectedFoods?.length);
+    const isMockMode = useDietStore.getState().useMockData;
+
     setIsScanning(false);
+
+    if (!isMockMode && !hasResults) {
+      Alert.alert(
+        'Analiz Başarısız',
+        'Yapay zekâ tabağınızı analiz edemedi. Lütfen tekrar deneyin.'
+      );
+      setCapturedImage(null);
+      setDetectedFood(undefined);
+      setDetectedFoods(undefined);
+      return;
+    }
+
     setIsAnalysisModalVisible(true);
   };
 

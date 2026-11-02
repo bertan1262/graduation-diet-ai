@@ -137,8 +137,8 @@ export const FoodAnalysisModal: React.FC<FoodAnalysisModalProps> = ({
             baseFiber: detectedFood.nutrition.fiberGrams ?? 2.4,
           },
         ]);
-      } else {
-        // 3. Fallback default multi-item plate when no detection prop is passed
+      } else if (useDietStore.getState().useMockData) {
+        // 3. Fallback demo plate — ONLY in mock mode (live mode must never fabricate food)
         setPlateItems([
           {
             id: 'item-1',

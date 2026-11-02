@@ -33,6 +33,7 @@ export const ChatScreen: React.FC = () => {
   const addChatMessage = useDietStore((state) => state.addChatMessage);
   const clearChatMessages = useDietStore((state) => state.clearChatMessages);
   const getDailySummary = useDietStore((state) => state.getDailySummary);
+  const useMockData = useDietStore((state) => state.useMockData);
 
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
@@ -150,18 +151,12 @@ export const ChatScreen: React.FC = () => {
           });
         })
         .catch(() => {
-          const isMedical = isMedicalQuery(trimmed);
-          const fallbackContent = isMedical
-            ? 'Sağlığınız her şeyden önemlidir. DietAI genel beslenme ve kalori rehberliği sunar; tıbbi tanı koyamaz ve ilaç tedavisi öneremez. Lütfen bu durumu mutlaka hekiminize veya uzman bir klinik diyetisyene danışınız.'
-            : generateContextualMockDietitianReply(trimmed, clientContext);
-
           addChatMessage({
             id: `assistant-${Date.now()}`,
             sender: 'assistant',
-            content: fallbackContent,
+            content:
+              '⚠️ Sunucuya şu anda ulaşılamadı. Bağlantınızı kontrol edip mesajınızı tekrar gönderin.',
             timestamp: getTimeString(),
-            isMedicalWarning: isMedical,
-            safety_flag_triggered: isMedical,
           });
         })
         .finally(() => {
@@ -185,8 +180,10 @@ export const ChatScreen: React.FC = () => {
           <View>
             <Text style={styles.headerTitle}>DietAI Diyetisyeni</Text>
             <View style={styles.headerStatusRow}>
-              <View style={styles.onlineDot} />
-              <Text style={styles.headerSubtitle}>Çevrimiçi • Beslenme Koçu</Text>
+              <View style={[styles.onlineDot, useMockData && styles.mockDot]} />
+              <Text style={styles.headerSubtitle}>
+                {useMockData ? 'Demo Modu • Çevrimdışı Veri' : 'Çevrimiçi • Beslenme Koçu'}
+              </Text>
             </View>
           </View>
         </View>
@@ -307,6 +304,9 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       borderRadius: 3,
       backgroundColor: Colors.primary,
       marginRight: 5,
+    },
+    mockDot: {
+      backgroundColor: '#F59E0B',
     },
     headerSubtitle: {
       ...Typography.tiny,
