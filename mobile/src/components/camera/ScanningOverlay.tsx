@@ -7,6 +7,7 @@ import {
   Image,
   TouchableOpacity,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
 
@@ -32,15 +33,19 @@ export const ScanningOverlay: React.FC<ScanningOverlayProps> = ({
   onCancel,
   onRunInBackground,
 }) => {
+  const insets = useSafeAreaInsets();
   const [stageIndex, setStageIndex] = useState(0);
   const onScanCompleteRef = useRef(onScanComplete);
-  onScanCompleteRef.current = onScanComplete;
+
+  useEffect(() => {
+    onScanCompleteRef.current = onScanComplete;
+  }, [onScanComplete]);
 
   // Animated laser scan position (0 -> 1 -> 0)
-  const scanAnim = useRef(new Animated.Value(0)).current;
+  const [scanAnim] = useState(() => new Animated.Value(0));
 
   // Pulse animation for status pill
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [pulseAnim] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     // 1. Oscillating 60fps laser beam animation
@@ -93,7 +98,7 @@ export const ScanningOverlay: React.FC<ScanningOverlayProps> = ({
       clearTimeout(timer3);
       clearTimeout(finishTimer);
     };
-  }, []);
+  }, [scanAnim, pulseAnim]);
 
   const translateY = scanAnim.interpolate({
     inputRange: [0, 1],
@@ -111,7 +116,15 @@ export const ScanningOverlay: React.FC<ScanningOverlayProps> = ({
       <View style={styles.darkTint} />
 
       {/* 3. Overlay Content */}
-      <View style={styles.container}>
+      <View
+        style={[
+          styles.container,
+          {
+            paddingTop: Math.max(insets.top, Spacing.lg),
+            paddingBottom: Math.max(insets.bottom, Spacing.lg),
+          },
+        ]}
+      >
         {/* Top Header Bar */}
         <View style={styles.headerBar}>
           <View style={styles.aiBadge}>

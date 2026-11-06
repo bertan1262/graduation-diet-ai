@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,6 +16,7 @@ import { FoodItemDetection, MealType } from '../../types';
 import { MOCK_DETECTED_MEAL } from '../../constants/mockData';
 import { useDietStore } from '../../store/useDietStore';
 import { PortionSlider } from './PortionSlider';
+import { matchUserAllergens } from '../../utils/allergenMatcher';
 
 export interface LoggedMealPayload {
   name: string;
@@ -51,11 +52,18 @@ const MEAL_OPTIONS: { type: MealType; label: string; icon: string }[] = [
   { type: 'snack', label: 'Ara Öğün', icon: '🍎' },
 ];
 
-const ALTERNATIVE_DISAMBIGUATIONS = [
-  { name: 'Izgara Tavuk Göğsü', calories: 297, protein: 55.8, carbs: 0, fat: 6.5 },
-  { name: 'Fırında Hindi Bonfile', calories: 260, protein: 52.0, carbs: 0, fat: 4.8 },
-  { name: 'Fırın Somon Fileto', calories: 340, protein: 38.0, carbs: 0, fat: 20.0 },
-  { name: 'Izgara Hellim & Sebze', calories: 310, protein: 24.0, carbs: 8, fat: 21.0 },
+const ALTERNATIVE_DISAMBIGUATIONS: {
+  name: string;
+  grams: number;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}[] = [
+  { name: 'Izgara Tavuk Göğsü', grams: 180, calories: 297, protein: 55.8, carbs: 0, fat: 6.5 },
+  { name: 'Fırında Hindi Bonfile', grams: 180, calories: 260, protein: 52.0, carbs: 0, fat: 4.8 },
+  { name: 'Fırın Somon Fileto', grams: 180, calories: 340, protein: 38.0, carbs: 0, fat: 20.0 },
+  { name: 'Izgara Hellim & Sebze', grams: 180, calories: 310, protein: 24.0, carbs: 8, fat: 21.0 },
 ];
 
 interface EditablePlateItem {
@@ -69,6 +77,77 @@ interface EditablePlateItem {
   baseCarbs: number;
   baseFat: number;
   baseFiber: number;
+}
+
+function buildInitialPlateItems(
+  detectedFood?: FoodItemDetection,
+  detectedFoods?: FoodItemDetection[],
+  useMockData?: boolean
+): EditablePlateItem[] {
+  if (detectedFoods && detectedFoods.length > 0) {
+    return detectedFoods.map((f, i) => ({
+      id: f.id || `item-${i}`,
+      foodName: f.foodName,
+      baseGrams: f.portionGrams || 150,
+      currentGrams: f.portionGrams || 150,
+      confidenceScore: f.confidenceScore || 0.9,
+      baseCalories: f.nutrition.calories,
+      baseProtein: f.nutrition.proteinGrams,
+      baseCarbs: f.nutrition.carbsGrams,
+      baseFat: f.nutrition.fatGrams,
+      baseFiber:
+        f.nutrition.fiberGrams ??
+        Math.round((f.nutrition.carbsGrams || 0) * 0.15 * 10) / 10,
+    }));
+  }
+
+  if (detectedFood) {
+    return [
+      {
+        id: detectedFood.id || 'item-1',
+        foodName: detectedFood.foodName || MOCK_DETECTED_MEAL.foodName,
+        baseGrams: detectedFood.portionGrams || 180,
+        currentGrams: detectedFood.portionGrams || 180,
+        confidenceScore: detectedFood.confidenceScore || 0.94,
+        baseCalories: detectedFood.nutrition.calories ?? 297,
+        baseProtein: detectedFood.nutrition.proteinGrams ?? 55.8,
+        baseCarbs: detectedFood.nutrition.carbsGrams ?? 0,
+        baseFat: detectedFood.nutrition.fatGrams ?? 6.5,
+        baseFiber: detectedFood.nutrition.fiberGrams ?? 2.4,
+      },
+    ];
+  }
+
+  if (useMockData) {
+    return [
+      {
+        id: 'item-1',
+        foodName: 'Izgara Tavuk Göğsü',
+        baseGrams: 180,
+        currentGrams: 180,
+        confidenceScore: 0.94,
+        baseCalories: 297,
+        baseProtein: 55.8,
+        baseCarbs: 0,
+        baseFat: 6.5,
+        baseFiber: 0,
+      },
+      {
+        id: 'item-2',
+        foodName: 'Kinoa & Akdeniz Salatası',
+        baseGrams: 150,
+        currentGrams: 150,
+        confidenceScore: 0.88,
+        baseCalories: 185,
+        baseProtein: 5.2,
+        baseCarbs: 28.4,
+        baseFat: 6.1,
+        baseFiber: 4.8,
+      },
+    ];
+  }
+
+  return [];
 }
 
 const PIN_COORDINATES: { top: `${number}%`; left: `${number}%` }[] = [
@@ -86,6 +165,7 @@ export const FoodAnalysisModal: React.FC<FoodAnalysisModalProps> = ({
   onConfirm,
 }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const useMockData = useDietStore((state) => state.useMockData);
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
   const addMeal = useDietStore((state) => state.addMeal);
@@ -96,78 +176,25 @@ export const FoodAnalysisModal: React.FC<FoodAnalysisModalProps> = ({
   const [hasExtraSauce, setHasExtraSauce] = useState(false);
 
   // Initialize plate items (supports both single barcode items and multi-item AI plates)
-  const [plateItems, setPlateItems] = useState<EditablePlateItem[]>([]);
+  const [plateItems, setPlateItems] = useState<EditablePlateItem[]>(() =>
+    buildInitialPlateItems(detectedFood, detectedFoods, useMockData)
+  );
 
-  useEffect(() => {
+  const syncKey = `${visible}-${imageUri ?? ''}-${detectedFood?.id ?? ''}-${
+    detectedFoods?.map((f) => f.id).join(',') ?? ''
+  }`;
+  const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
+
+  if (syncKey !== prevSyncKey) {
+    setPrevSyncKey(syncKey);
     if (visible) {
       setIsSaved(false);
       setShowDisambiguation(false);
       setHasExtraSauce(false);
       setActiveItemIndex(0);
-
-      // 1. Multiple detected foods passed from AI vision engine
-      if (detectedFoods && detectedFoods.length > 0) {
-        setPlateItems(
-          detectedFoods.map((f, i) => ({
-            id: f.id || `item-${i}`,
-            foodName: f.foodName,
-            baseGrams: f.portionGrams || 150,
-            currentGrams: f.portionGrams || 150,
-            confidenceScore: f.confidenceScore || 0.9,
-            baseCalories: f.nutrition.calories,
-            baseProtein: f.nutrition.proteinGrams,
-            baseCarbs: f.nutrition.carbsGrams,
-            baseFat: f.nutrition.fatGrams,
-            baseFiber: f.nutrition.fiberGrams ?? Math.round((f.nutrition.carbsGrams || 0) * 0.15 * 10) / 10,
-          }))
-        );
-      } else if (detectedFood) {
-        // 2. Single explicit item (e.g., Barcode scan or single-dish detection)
-        setPlateItems([
-          {
-            id: detectedFood.id || 'item-1',
-            foodName: detectedFood.foodName || MOCK_DETECTED_MEAL.foodName,
-            baseGrams: detectedFood.portionGrams || 180,
-            currentGrams: detectedFood.portionGrams || 180,
-            confidenceScore: detectedFood.confidenceScore || 0.94,
-            baseCalories: detectedFood.nutrition.calories ?? 297,
-            baseProtein: detectedFood.nutrition.proteinGrams ?? 55.8,
-            baseCarbs: detectedFood.nutrition.carbsGrams ?? 0,
-            baseFat: detectedFood.nutrition.fatGrams ?? 6.5,
-            baseFiber: detectedFood.nutrition.fiberGrams ?? 2.4,
-          },
-        ]);
-      } else if (useDietStore.getState().useMockData) {
-        // 3. Fallback demo plate — ONLY in mock mode (live mode must never fabricate food)
-        setPlateItems([
-          {
-            id: 'item-1',
-            foodName: 'Izgara Tavuk Göğsü',
-            baseGrams: 180,
-            currentGrams: 180,
-            confidenceScore: 0.94,
-            baseCalories: 297,
-            baseProtein: 55.8,
-            baseCarbs: 0,
-            baseFat: 6.5,
-            baseFiber: 0,
-          },
-          {
-            id: 'item-2',
-            foodName: 'Kinoa & Akdeniz Salatası',
-            baseGrams: 150,
-            currentGrams: 150,
-            confidenceScore: 0.88,
-            baseCalories: 185,
-            baseProtein: 5.2,
-            baseCarbs: 28.4,
-            baseFat: 6.1,
-            baseFiber: 4.8,
-          },
-        ]);
-      }
+      setPlateItems(buildInitialPlateItems(detectedFood, detectedFoods, useMockData));
     }
-  }, [visible, detectedFood, detectedFoods]);
+  }
 
   const activeItem = plateItems[activeItemIndex] || plateItems[0];
 
@@ -185,14 +212,17 @@ export const FoodAnalysisModal: React.FC<FoodAnalysisModalProps> = ({
     });
   };
 
-  // Swap active item name & base nutrition with an alternative choice
+  // Swap active item name, base nutrition & default portion grams with an alternative choice
   const handleSelectAlternative = (alt: (typeof ALTERNATIVE_DISAMBIGUATIONS)[0]) => {
+    const targetGrams = alt.grams ?? 180;
     setPlateItems((prev) => {
       const updated = [...prev];
       if (updated[activeItemIndex]) {
         updated[activeItemIndex] = {
           ...updated[activeItemIndex],
           foodName: alt.name,
+          baseGrams: targetGrams,
+          currentGrams: targetGrams,
           baseCalories: alt.calories,
           baseProtein: alt.protein,
           baseCarbs: alt.carbs,
@@ -253,42 +283,12 @@ export const FoodAnalysisModal: React.FC<FoodAnalysisModalProps> = ({
 
     const plateTitle = plateItems.map((p) => p.foodName).join(' + ');
 
-    // Match allergens against userProfile
+    // Match allergens against userProfile using centralized matcher
     const userAllergies = useDietStore.getState().userProfile.allergies || [];
-    const detectedAllergens: string[] = [];
-    const lowerPlate = plateTitle.toLowerCase();
-    for (const alg of userAllergies) {
-      const aLower = alg.toLowerCase();
-      if (
-        (aLower.includes('gluten') &&
-          (lowerPlate.includes('ekmek') ||
-            lowerPlate.includes('buğday') ||
-            lowerPlate.includes('makarna') ||
-            lowerPlate.includes('un') ||
-            lowerPlate.includes('yulaf'))) ||
-        (aLower.includes('laktoz') &&
-          (lowerPlate.includes('süt') ||
-            lowerPlate.includes('peynir') ||
-            lowerPlate.includes('yoğurt') ||
-            lowerPlate.includes('hellim'))) ||
-        (aLower.includes('fındık') &&
-          (lowerPlate.includes('fındık') ||
-            lowerPlate.includes('fıstık') ||
-            lowerPlate.includes('ceviz'))) ||
-        (aLower.includes('fıstık') &&
-          (lowerPlate.includes('fıstık') ||
-            lowerPlate.includes('fındık') ||
-            lowerPlate.includes('ceviz'))) ||
-        (aLower.includes('yumurta') && lowerPlate.includes('yumurta')) ||
-        (aLower.includes('deniz') &&
-          (lowerPlate.includes('somon') ||
-            lowerPlate.includes('balık') ||
-            lowerPlate.includes('ton'))) ||
-        lowerPlate.includes(aLower)
-      ) {
-        detectedAllergens.push(alg);
-      }
-    }
+    const { matchedUserAllergies: detectedAllergens } = matchUserAllergens({
+      foodText: plateTitle,
+      userAllergies,
+    });
 
     const mealPayload: LoggedMealPayload = {
       name: plateTitle,
@@ -311,6 +311,8 @@ export const FoodAnalysisModal: React.FC<FoodAnalysisModalProps> = ({
 
     if (onConfirm) {
       onConfirm(mealPayload);
+      setIsSaved(false);
+      onClose();
     } else {
       setTimeout(() => {
         setIsSaved(false);
@@ -319,7 +321,33 @@ export const FoodAnalysisModal: React.FC<FoodAnalysisModalProps> = ({
     }
   };
 
-  if (!activeItem) return null;
+  if (!activeItem) {
+    if (!visible) return null;
+    return (
+      <Modal visible={visible} transparent={true} animationType="fade" onRequestClose={onClose}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.backdropDismissArea}
+            activeOpacity={1}
+            onPress={onClose}
+          />
+          <View style={[styles.drawerContainer, { padding: Spacing.xl, alignItems: 'center' }]}>
+            <Text style={{ fontSize: 40, marginBottom: Spacing.md }}>🍽️</Text>
+            <Text style={[styles.headerTitle, { textAlign: 'center' }]}>Tabak Verisi Bulunamadı</Text>
+            <Text style={{ ...Typography.caption, color: theme.textMuted, textAlign: 'center', marginVertical: Spacing.md }}>
+              Fotoğraftan yemek tespit edilemedi veya analiz sonucu yüklenemedi. Lütfen tekrar deneyin.
+            </Text>
+            <TouchableOpacity
+              style={[styles.confirmButton, { width: '100%', marginTop: Spacing.md }]}
+              onPress={onClose}
+            >
+              <Text style={styles.confirmButtonText}>Kapat</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
 
   const confidencePercent = Math.round((activeItem.confidenceScore || 0.9) * 100);
 

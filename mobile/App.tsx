@@ -18,6 +18,7 @@ import { ChatScreen } from './src/screens/ChatScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { AnimatedSplashScreen } from './src/components/common/AnimatedSplashScreen';
+import { useLiveToday } from './src/utils/dateUtils';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
@@ -27,6 +28,7 @@ export default function App() {
   const checkAndRollOverDay = useDietStore((state) => state.checkAndRollOverDay);
   const hasCompletedOnboarding = useDietStore((state) => state.hasCompletedOnboarding);
   const setHasCompletedOnboarding = useDietStore((state) => state.setHasCompletedOnboarding);
+  const { todayKey } = useLiveToday();
   const theme = getThemeColors(isDarkMode);
 
   // Android hardware / gesture back button: return to dashboard tab first
@@ -50,7 +52,7 @@ export default function App() {
   }, [activeTab]);
 
   useEffect(() => {
-    // Check if midnight rolled over on mount
+    // Check if midnight rolled over on mount or when todayKey changes at midnight
     checkAndRollOverDay();
 
     // Re-check whenever user returns to the app from background
@@ -63,7 +65,7 @@ export default function App() {
     return () => {
       subscription.remove();
     };
-  }, [checkAndRollOverDay]);
+  }, [checkAndRollOverDay, todayKey]);
 
   const getScreenTitle = () => {
     switch (activeTab) {

@@ -12,6 +12,12 @@ import { Colors, getThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useDietStore } from '../store/useDietStore';
 import { MealType, MealRecipe, DayPlan } from '../types';
+import { matchUserAllergens } from '../utils/allergenMatcher';
+import {
+  getCurrentWeekDays,
+  overlayCurrentWeekDatesOnPlan,
+  useLiveToday,
+} from '../utils/dateUtils';
 
 // Comprehensive alternative recipes pool categorized with allergens and dietary types
 export const ALTERNATIVE_MEALS: Record<MealType, MealRecipe[]> = {
@@ -302,76 +308,97 @@ export const ALTERNATIVE_MEALS: Record<MealType, MealRecipe[]> = {
 };
 
 /**
- * Checks whether a recipe is 100% compliant with the user's allergies and diet goals.
+ * Returns specific allergen conflicts between a recipe and user's declared allergies.
+ */
+export function getAllergenWarnings(meal: MealRecipe, userAllergies: string[] = []): string[] {
+  if (!userAllergies || userAllergies.length === 0) return [];
+  const match = matchUserAllergens({
+    foodText: `${meal.title} ${meal.description}`,
+    foodAllergens: meal.allergens,
+    userAllergies,
+  });
+  return match.canonicalLabels;
+}
+
+/**
+ * Checks whether a recipe is 100% compliant with the user's allergies, dietary goal, and dietType.
  */
 export function isMealSafeForProfile(
   meal: MealRecipe,
   userAllergies: string[] = [],
-  dietaryGoal?: string
+  dietaryGoal?: string,
+  dietType?: string
 ): boolean {
-  if (!userAllergies || userAllergies.length === 0) return true;
+  if (userAllergies && userAllergies.length > 0) {
+    const warnings = getAllergenWarnings(meal, userAllergies);
+    if (warnings.length > 0) {
+      return false;
+    }
 
-  const allergyLower = userAllergies.join(' ').toLowerCase();
+    const allergyLower = userAllergies.join(' ').toLowerCase();
 
-  // 1. Laktoz Alerjisi / Hassasiyeti
-  if (allergyLower.includes('laktoz') && meal.allergens?.includes('lactose')) {
-    return false;
+    // Vejetaryen Tercihi
+    if (allergyLower.includes('vejetaryen') && !meal.dietTypes?.includes('vegetarian')) {
+      return false;
+    }
+    // Ketojenik Tercihi (allergies chip)
+    if (allergyLower.includes('ketojenik')) {
+      if (!meal.dietTypes?.includes('keto') && meal.carbsGrams > 22) {
+        return false;
+      }
+    }
   }
-  // 2. Gluten Hassasiyeti
-  if (allergyLower.includes('gluten') && meal.allergens?.includes('gluten')) {
-    return false;
-  }
-  // 3. Fıstık / Kuruyemiş Alerjisi
-  if (allergyLower.includes('fıstık') && meal.allergens?.includes('peanut')) {
-    return false;
-  }
-  // 4. Deniz Ürünleri Alerjisi
-  if (allergyLower.includes('deniz') && meal.allergens?.includes('seafood')) {
-    return false;
-  }
-  // 5. Yumurta Alerjisi
-  if (allergyLower.includes('yumurta') && meal.allergens?.includes('egg')) {
-    return false;
-  }
-  // 6. Vejetaryen Tercihi
-  if (allergyLower.includes('vejetaryen') && !meal.dietTypes?.includes('vegetarian')) {
-    return false;
-  }
-  // 7. Ketojenik Tercihi
-  if (allergyLower.includes('ketojenik')) {
+
+  // Diet Type Filtering
+  if (dietType === 'keto') {
     if (!meal.dietTypes?.includes('keto') && meal.carbsGrams > 22) {
       return false;
     }
+  } else if (dietType === 'low_carb') {
+    if (!meal.dietTypes?.includes('keto') && meal.carbsGrams > 32) {
+      return false;
+    }
+  } else if (dietType === 'high_protein') {
+    if (
+      !meal.dietTypes?.includes('high_protein') &&
+      meal.proteinGrams < 20 &&
+      meal.calories > 250
+    ) {
+      return false;
+    }
+  } else if (dietType === 'mediterranean') {
+    if (meal.dietTypes && meal.dietTypes.includes('mediterranean')) {
+      // Explicitly tagged Mediterranean dish
+    } else if (meal.fatGrams < 8 && meal.calories > 250) {
+      return false;
+    }
+  }
+
+  if (dietaryGoal === 'muscle_gain' && meal.calories > 250 && meal.proteinGrams < 15) {
+    return false;
   }
 
   return true;
 }
 
-/**
- * Returns specific allergen conflicts between a recipe and user's declared allergies.
- */
-export function getAllergenWarnings(meal: MealRecipe, userAllergies: string[] = []): string[] {
-  if (!userAllergies || userAllergies.length === 0 || !meal.allergens) return [];
-  const allergyLower = userAllergies.join(' ').toLowerCase();
-  const warnings: string[] = [];
-
-  if ((allergyLower.includes('laktoz') || allergyLower.includes('lactose')) && meal.allergens.includes('lactose')) {
-    warnings.push('Laktoz (Süt)');
+function pickSafeMealForSlot(
+  type: MealType,
+  dayIndex: number,
+  offset: number,
+  allergies: string[],
+  goal?: string,
+  dietType?: string
+): MealRecipe {
+  const allForType = ALTERNATIVE_MEALS[type];
+  const strictlySafe = allForType.filter((m) =>
+    isMealSafeForProfile(m, allergies, goal, dietType)
+  );
+  if (strictlySafe.length > 0) {
+    return strictlySafe[(dayIndex + offset) % strictlySafe.length];
   }
-  if (allergyLower.includes('gluten') && meal.allergens.includes('gluten')) {
-    warnings.push('Gluten (Buğday)');
-  }
-  if ((allergyLower.includes('fıstık') || allergyLower.includes('peanut') || allergyLower.includes('kuruyemiş')) && meal.allergens.includes('peanut')) {
-    warnings.push('Fıstık / Kuruyemiş');
-  }
-  if ((allergyLower.includes('deniz') || allergyLower.includes('seafood')) && meal.allergens.includes('seafood')) {
-    warnings.push('Deniz Ürünü');
-  }
-  if ((allergyLower.includes('yumurta') || allergyLower.includes('egg')) && meal.allergens.includes('egg')) {
-    warnings.push('Yumurta');
-  }
-
-  return warnings;
+  const allergenSafe = allForType.filter((m) => isMealSafeForProfile(m, allergies));
+  const pool = allergenSafe.length > 0 ? allergenSafe : allForType;
+  return pool[(dayIndex + offset) % pool.length];
 }
 
 /**
@@ -380,57 +407,24 @@ export function getAllergenWarnings(meal: MealRecipe, userAllergies: string[] = 
  */
 export function generatePersonalizedWeekPlan(
   allergies: string[],
-  goal: string
+  goal: string,
+  dietType?: string,
+  referenceDate: Date = new Date()
 ): DayPlan[] {
-  const now = new Date();
-  // Monday is 0 in Turkey (Monday through Sunday)
-  const currentDayOfWeek = now.getDay();
-  const mondayOffset = (currentDayOfWeek + 6) % 7;
+  const weekDays = getCurrentWeekDays(referenceDate);
 
-  const mondayDate = new Date(now);
-  mondayDate.setDate(now.getDate() - mondayOffset);
-
-  const dayTemplates = [
-    { dayId: 'mon', dayName: 'Pazartesi', dayShort: 'Pzt' },
-    { dayId: 'tue', dayName: 'Salı', dayShort: 'Sal' },
-    { dayId: 'wed', dayName: 'Çarşamba', dayShort: 'Çar' },
-    { dayId: 'thu', dayName: 'Perşembe', dayShort: 'Per' },
-    { dayId: 'fri', dayName: 'Cuma', dayShort: 'Cum' },
-    { dayId: 'sat', dayName: 'Cumartesi', dayShort: 'Cmt' },
-    { dayId: 'sun', dayName: 'Pazar', dayShort: 'Paz' },
-  ];
-
-  return dayTemplates.map((template, dayIndex) => {
-    const targetDate = new Date(mondayDate);
-    targetDate.setDate(mondayDate.getDate() + dayIndex);
-
-    const isToday =
-      targetDate.getDate() === now.getDate() &&
-      targetDate.getMonth() === now.getMonth() &&
-      targetDate.getFullYear() === now.getFullYear();
-
-    const monthName = new Intl.DateTimeFormat('tr-TR', { month: 'long' }).format(targetDate);
-
-    const getSafeMeal = (type: MealType, offset: number) => {
-      const allForType = ALTERNATIVE_MEALS[type];
-      const safe = allForType.filter((m) => isMealSafeForProfile(m, allergies, goal));
-      const pool = safe.length > 0 ? safe : allForType;
-      return pool[(dayIndex + offset) % pool.length];
-    };
-
-    return {
-      dayId: template.dayId,
-      dayName: template.dayName,
-      dayShort: template.dayShort,
-      dayOfMonth: targetDate.getDate(),
-      monthName,
-      isToday,
-      breakfast: getSafeMeal('breakfast', 0),
-      lunch: getSafeMeal('lunch', 1),
-      dinner: getSafeMeal('dinner', 2),
-      snack: getSafeMeal('snack', 3),
-    };
-  });
+  return weekDays.map((meta, dayIndex) => ({
+    dayId: meta.dayId,
+    dayName: meta.dayName,
+    dayShort: meta.dayShort,
+    dayOfMonth: meta.dayOfMonth,
+    monthName: meta.monthName,
+    isToday: meta.isToday,
+    breakfast: pickSafeMealForSlot('breakfast', dayIndex, 0, allergies, goal, dietType),
+    lunch: pickSafeMealForSlot('lunch', dayIndex, 1, allergies, goal, dietType),
+    dinner: pickSafeMealForSlot('dinner', dayIndex, 2, allergies, goal, dietType),
+    snack: pickSafeMealForSlot('snack', dayIndex, 3, allergies, goal, dietType),
+  }));
 }
 
 export const MealPlanScreen: React.FC = () => {
@@ -442,31 +436,131 @@ export const MealPlanScreen: React.FC = () => {
   const updateDayMeal = useDietStore((state) => state.updateDayMeal);
   const theme = getThemeColors(isDarkMode);
 
-  // Automatically default selected tab to TODAY's index (0 = Mon, 1 = Tue, etc.)
-  const now = new Date();
-  const todayMondayIndex = (now.getDay() + 6) % 7;
+  // Live reactive today state (updates on foreground return and midnight rollover)
+  const { todayDate, todayKey, todayMondayIndex, weekDays } = useLiveToday();
+  const currentWeekMondayIso = weekDays[0]?.isoDate ?? todayKey;
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => todayMondayIndex);
+  const [lastSyncedToday, setLastSyncedToday] = useState<{
+    key: string;
+    index: number;
+    weekMondayIso: string;
+  }>(() => ({
+    key: todayKey,
+    index: todayMondayIndex,
+    weekMondayIso: currentWeekMondayIso,
+  }));
 
-  // Initialize or synchronize meal plan if not yet set in store
-  useEffect(() => {
-    if (!customWeekPlan || customWeekPlan.length === 0) {
-      const initialPlan = generatePersonalizedWeekPlan(
-        userProfile.allergies || [],
-        userProfile.dietaryGoal || 'weight_loss'
-      );
-      setCustomWeekPlan(initialPlan);
+  // Shift selected day tab to the new today when the calendar day rolls over
+  // if the user was viewing the previous today (or if the entire week rolled over)
+  if (todayKey !== lastSyncedToday.key) {
+    const wasViewingPreviousToday = selectedDayIndex === lastSyncedToday.index;
+    const didWeekRollOver = currentWeekMondayIso !== lastSyncedToday.weekMondayIso;
+    setLastSyncedToday({
+      key: todayKey,
+      index: todayMondayIndex,
+      weekMondayIso: currentWeekMondayIso,
+    });
+    if (wasViewingPreviousToday || didWeekRollOver) {
+      setSelectedDayIndex(todayMondayIndex);
     }
-  }, [userProfile.allergies, userProfile.dietaryGoal, customWeekPlan, setCustomWeekPlan]);
+  }
+
+  // Initialize or automatically sanitize customWeekPlan when allergies, dietaryGoal, dietType, or calendar week change
+  useEffect(() => {
+    const allergies = userProfile.allergies || [];
+    const goal = userProfile.dietaryGoal || 'weight_loss';
+    const dietType = userProfile.dietType || 'balanced';
+
+    if (!customWeekPlan || customWeekPlan.length !== 7) {
+      setCustomWeekPlan(generatePersonalizedWeekPlan(allergies, goal, dietType, todayDate));
+      return;
+    }
+
+    let needsUpdate = false;
+    const sanitizedPlan = customWeekPlan.map((day, dayIdx) => {
+      const meta = weekDays[dayIdx];
+      const nextBreakfast = isMealSafeForProfile(day.breakfast, allergies, goal, dietType)
+        ? day.breakfast
+        : pickSafeMealForSlot('breakfast', dayIdx, 0, allergies, goal, dietType);
+      const nextLunch = isMealSafeForProfile(day.lunch, allergies, goal, dietType)
+        ? day.lunch
+        : pickSafeMealForSlot('lunch', dayIdx, 1, allergies, goal, dietType);
+      const nextDinner = isMealSafeForProfile(day.dinner, allergies, goal, dietType)
+        ? day.dinner
+        : pickSafeMealForSlot('dinner', dayIdx, 2, allergies, goal, dietType);
+      const nextSnack = isMealSafeForProfile(day.snack, allergies, goal, dietType)
+        ? day.snack
+        : pickSafeMealForSlot('snack', dayIdx, 3, allergies, goal, dietType);
+
+      const mealsChanged =
+        nextBreakfast.id !== day.breakfast.id ||
+        nextLunch.id !== day.lunch.id ||
+        nextDinner.id !== day.dinner.id ||
+        nextSnack.id !== day.snack.id;
+
+      const datesChanged =
+        Boolean(meta) &&
+        (day.dayId !== meta.dayId ||
+          day.dayName !== meta.dayName ||
+          day.dayShort !== meta.dayShort ||
+          day.dayOfMonth !== meta.dayOfMonth ||
+          day.monthName !== meta.monthName ||
+          day.isToday !== meta.isToday);
+
+      if (mealsChanged || datesChanged) {
+        needsUpdate = true;
+        return {
+          ...day,
+          ...(meta
+            ? {
+                dayId: meta.dayId,
+                dayName: meta.dayName,
+                dayShort: meta.dayShort,
+                dayOfMonth: meta.dayOfMonth,
+                monthName: meta.monthName,
+                isToday: meta.isToday,
+              }
+            : {}),
+          breakfast: nextBreakfast,
+          lunch: nextLunch,
+          dinner: nextDinner,
+          snack: nextSnack,
+        };
+      }
+      return day;
+    });
+
+    if (needsUpdate) {
+      setCustomWeekPlan(sanitizedPlan);
+    }
+  }, [
+    userProfile.allergies,
+    userProfile.dietaryGoal,
+    userProfile.dietType,
+    customWeekPlan,
+    setCustomWeekPlan,
+    todayDate,
+    weekDays,
+  ]);
 
   const effectiveWeekPlan: DayPlan[] = useMemo(() => {
-    if (customWeekPlan && customWeekPlan.length === 7) {
-      return customWeekPlan;
-    }
-    return generatePersonalizedWeekPlan(
-      userProfile.allergies || [],
-      userProfile.dietaryGoal || 'weight_loss'
-    );
-  }, [customWeekPlan, userProfile.allergies, userProfile.dietaryGoal]);
+    const basePlan =
+      customWeekPlan && customWeekPlan.length === 7
+        ? customWeekPlan
+        : generatePersonalizedWeekPlan(
+            userProfile.allergies || [],
+            userProfile.dietaryGoal || 'weight_loss',
+            userProfile.dietType || 'balanced',
+            todayDate
+          );
+    return overlayCurrentWeekDatesOnPlan(basePlan, todayDate);
+  }, [
+    customWeekPlan,
+    userProfile.allergies,
+    userProfile.dietaryGoal,
+    userProfile.dietType,
+    todayDate,
+  ]);
 
   const activeDay = effectiveWeekPlan[selectedDayIndex] || effectiveWeekPlan[0];
 
@@ -486,11 +580,18 @@ export const MealPlanScreen: React.FC = () => {
   // Swap single meal with next safe alternative recipe and persist in store
   const handleSwapMeal = (mealType: MealType) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    const allergies = userProfile.allergies || [];
     const allForType = ALTERNATIVE_MEALS[mealType];
     const safeAlternatives = allForType.filter((m) =>
-      isMealSafeForProfile(m, userProfile.allergies || [], userProfile.dietaryGoal)
+      isMealSafeForProfile(m, allergies, userProfile.dietaryGoal, userProfile.dietType)
     );
-    const pool = safeAlternatives.length > 0 ? safeAlternatives : allForType;
+    const allergenSafe = allForType.filter((m) => isMealSafeForProfile(m, allergies));
+    const pool =
+      safeAlternatives.length > 0
+        ? safeAlternatives
+        : allergenSafe.length > 0
+        ? allergenSafe
+        : allForType;
 
     const currentId = activeDay[mealType].id;
     const currentIndex = pool.findIndex((m) => m.id === currentId);
@@ -505,14 +606,23 @@ export const MealPlanScreen: React.FC = () => {
   // Log meal directly to user's daily Dashboard
   const handleLogMealToToday = (meal: MealRecipe, mealType: MealType) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const matchedAllergens = getAllergenWarnings(meal, userProfile.allergies);
+    const estimatedPortion =
+      meal.portionGrams || (mealType === 'snack' ? 60 : mealType === 'breakfast' ? 180 : 250);
+
     addMeal({
       name: meal.title,
-      portionGrams: 200,
+      portionGrams: estimatedPortion,
       mealType,
       calories: meal.calories,
       proteinGrams: meal.proteinGrams,
       carbsGrams: meal.carbsGrams,
       fatGrams: meal.fatGrams,
+      allergens: matchedAllergens.length > 0 ? matchedAllergens : undefined,
+      warningMessage:
+        matchedAllergens.length > 0
+          ? `Alerjen Uyarısı: ${matchedAllergens.join(', ')}`
+          : undefined,
     });
 
     Alert.alert('Günlüğe Eklendi! ✅', `"${meal.title}" bugünkü kalori halkanıza başarıyla eklendi.`);

@@ -12,6 +12,7 @@ interface MacroItemProps {
   lightColor: string;
   unit?: string;
   compact?: boolean;
+  metricType?: 'macro' | 'positive_target' | 'ceiling_limit';
   theme: ThemeColors;
   isDarkMode: boolean;
   styles: ReturnType<typeof createStyles>;
@@ -25,6 +26,7 @@ export const MacroItem: React.FC<MacroItemProps> = ({
   lightColor,
   unit = 'g',
   compact = false,
+  metricType = 'macro',
   theme,
   isDarkMode,
   styles,
@@ -33,6 +35,48 @@ export const MacroItem: React.FC<MacroItemProps> = ({
   const progressPercent = Math.min(100, Math.round(progressRatio * 100));
   const remainingGrams = Math.max(0, Math.round((targetGrams - currentGrams) * 10) / 10);
   const isOver = currentGrams > targetGrams;
+  const isPositiveTarget = metricType === 'positive_target';
+  const isCeilingLimit = metricType === 'ceiling_limit';
+
+  const barColor = isOver
+    ? isPositiveTarget
+      ? theme.primary
+      : Colors.danger
+    : color;
+
+  const badgeBgColor = isOver
+    ? isPositiveTarget
+      ? isDarkMode
+        ? '#064E3B'
+        : '#ECFDF5'
+      : isDarkMode
+      ? '#7F1D1D'
+      : '#FEE2E2'
+    : isDarkMode
+    ? '#1E293B'
+    : lightColor;
+
+  const badgeTextColor = isOver
+    ? isPositiveTarget
+      ? isDarkMode
+        ? '#34D399'
+        : theme.primary
+      : isDarkMode
+      ? '#FCA5A5'
+      : Colors.danger
+    : color;
+
+  const footerText = isPositiveTarget
+    ? isOver
+      ? `Hedef tamamlandı (+${(currentGrams - targetGrams).toFixed(1)}${unit})`
+      : `${remainingGrams}${unit} kaldı`
+    : isCeilingLimit
+    ? isOver
+      ? `${(currentGrams - targetGrams).toFixed(unit === 'mg' ? 0 : 1)}${unit} limit aşıldı`
+      : `${remainingGrams}${unit} limit hakkı kaldı`
+    : isOver
+    ? `${(currentGrams - targetGrams).toFixed(unit === 'mg' ? 0 : 1)}${unit} aşıldı`
+    : `${remainingGrams}${unit} kaldı`;
 
   if (compact) {
     return (
@@ -53,7 +97,7 @@ export const MacroItem: React.FC<MacroItemProps> = ({
               styles.progressBar,
               {
                 width: `${Math.min(100, progressPercent)}%`,
-                backgroundColor: isOver ? Colors.danger : color,
+                backgroundColor: barColor,
               },
             ]}
           />
@@ -84,20 +128,14 @@ export const MacroItem: React.FC<MacroItemProps> = ({
             style={[
               styles.percentBadge,
               {
-                backgroundColor: isOver
-                  ? isDarkMode
-                    ? '#7F1D1D'
-                    : '#FEE2E2'
-                  : isDarkMode
-                  ? '#1E293B'
-                  : lightColor,
+                backgroundColor: badgeBgColor,
               },
             ]}
           >
             <Text
               style={[
                 styles.percentText,
-                { color: isOver ? (isDarkMode ? '#FCA5A5' : Colors.danger) : color },
+                { color: badgeTextColor },
               ]}
             >
               %{progressPercent}
@@ -113,7 +151,7 @@ export const MacroItem: React.FC<MacroItemProps> = ({
             styles.progressBar,
             {
               width: `${Math.min(100, progressPercent)}%`,
-              backgroundColor: isOver ? Colors.danger : color,
+              backgroundColor: barColor,
             },
           ]}
         />
@@ -121,11 +159,7 @@ export const MacroItem: React.FC<MacroItemProps> = ({
 
       {/* Footer: Remaining status */}
       <View style={styles.footerRow}>
-        <Text style={styles.remainingText}>
-          {isOver
-            ? `${(currentGrams - targetGrams).toFixed(unit === 'mg' ? 0 : 1)}${unit} aşıldı`
-            : `${remainingGrams}${unit} kaldı`}
-        </Text>
+        <Text style={styles.remainingText}>{footerText}</Text>
       </View>
     </View>
   );
@@ -159,17 +193,25 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
   compact = false,
 }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const todayMeals = useDietStore((state) => state.todayMeals);
   const getDailySummary = useDietStore((state) => state.getDailySummary);
-  const summary = getDailySummary();
 
   const [isMicroExpanded, setIsMicroExpanded] = useState(false);
 
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
 
-  const currentFiber = fiberGrams !== undefined ? fiberGrams : summary.totalFiber;
-  const currentSugar = sugarGrams !== undefined ? sugarGrams : summary.totalSugar;
-  const currentSodium = sodiumMg !== undefined ? sodiumMg : summary.totalSodium;
+  // Derive micros reactively only when needed or not explicitly provided
+  const summary = useMemo(() => {
+    if (fiberGrams !== undefined && sugarGrams !== undefined && sodiumMg !== undefined && !isMicroExpanded) {
+      return null;
+    }
+    return todayMeals ? getDailySummary() : null;
+  }, [fiberGrams, sugarGrams, sodiumMg, isMicroExpanded, getDailySummary, todayMeals]);
+
+  const currentFiber = fiberGrams !== undefined ? fiberGrams : summary?.totalFiber ?? 0;
+  const currentSugar = sugarGrams !== undefined ? sugarGrams : summary?.totalSugar ?? 0;
+  const currentSodium = sodiumMg !== undefined ? sodiumMg : summary?.totalSodium ?? 0;
 
   return (
     <View style={styles.container}>
@@ -241,6 +283,7 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
             color={Colors.primary}
             lightColor={Colors.primaryLight}
             unit="g"
+            metricType="positive_target"
             theme={theme}
             isDarkMode={isDarkMode}
             styles={styles}
@@ -255,6 +298,7 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
             color="#8B5CF6"
             lightColor="#EDE9FE"
             unit="g"
+            metricType="ceiling_limit"
             theme={theme}
             isDarkMode={isDarkMode}
             styles={styles}
@@ -269,6 +313,7 @@ export const MacroBar: React.FC<MacroSummaryCardProps> = ({
             color="#06B6D4"
             lightColor="#CFFAFE"
             unit="mg"
+            metricType="ceiling_limit"
             theme={theme}
             isDarkMode={isDarkMode}
             styles={styles}

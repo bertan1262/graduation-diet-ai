@@ -247,9 +247,18 @@ export interface MealRecipe {
   proteinGrams: number;
   carbsGrams: number;
   fatGrams: number;
+  portionGrams?: number;
   tags: string[];
   allergens?: ('lactose' | 'gluten' | 'peanut' | 'egg' | 'seafood')[];
-  dietTypes?: ('vegetarian' | 'vegan' | 'keto' | 'balanced' | 'high_protein')[];
+  dietTypes?: (
+    | 'vegetarian'
+    | 'vegan'
+    | 'keto'
+    | 'low_carb'
+    | 'balanced'
+    | 'high_protein'
+    | 'mediterranean'
+  )[];
 }
 
 export interface DayPlan {

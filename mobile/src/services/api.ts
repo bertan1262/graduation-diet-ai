@@ -31,15 +31,18 @@ export const resolveApiBaseUrl = (): string => {
   // Strip trailing slash for consistent endpoint concatenation
   const normalizedUrl = rawEnvUrl.replace(/\/+$/, '');
 
-  if (!isDevEnv && normalizedUrl.startsWith('http://')) {
+  if (!isDevEnv) {
+    const isInsecureHttp = normalizedUrl.startsWith('http://');
     const isLoopback =
-      normalizedUrl.startsWith('http://localhost') ||
-      normalizedUrl.startsWith('http://127.0.0.1');
-    if (!isLoopback) {
+      normalizedUrl.includes('localhost') ||
+      normalizedUrl.includes('127.0.0.1') ||
+      normalizedUrl.includes('10.0.2.2');
+
+    if (isInsecureHttp || isLoopback) {
       console.warn(
-        '[Security] Insecure HTTP API URL detected in production build. Automatically enforcing HTTPS.'
+        '[Security] Insecure HTTP or loopback API URL detected in production build. Enforcing secure production URL.'
       );
-      return normalizedUrl.replace(/^http:\/\//i, 'https://');
+      return DEFAULT_PROD_API_URL;
     }
   }
 
@@ -91,8 +94,20 @@ const MEDICAL_GUARDRAIL_KEYWORDS = [
 ];
 
 export function isMedicalQuery(text: string): boolean {
-  const lower = text.toLowerCase();
-  return MEDICAL_GUARDRAIL_KEYWORDS.some((kw) => lower.includes(kw));
+  const normalized = text
+    .toLocaleLowerCase('tr-TR')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ı/g, 'i');
+
+  return MEDICAL_GUARDRAIL_KEYWORDS.some((kw) => {
+    const normalizedKw = kw
+      .toLocaleLowerCase('tr-TR')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/ı/g, 'i');
+    return normalized.includes(normalizedKw);
+  });
 }
 
 // Network timeout helper
@@ -306,7 +321,7 @@ export const apiService = {
         `${baseUrl}/chat/message`,
         {
           method: 'POST',
-          body: JSON.stringify({ message: messageText, context }),
+          body: JSON.stringify({ message: messageText, user_context: context }),
         },
         8000
       );
@@ -448,7 +463,10 @@ export function computeClinicalFallback(payload: BMRCalculationRequest): BMRCalc
   // 2. Activity Multiplier
   let activityFactor = 1.55;
   let activityLevelName = 'moderate';
-  if (payload.activity_factor) {
+  if (payload.does_sports === false) {
+    activityFactor = 1.2;
+    activityLevelName = 'sedentary';
+  } else if (payload.activity_factor) {
     activityFactor = payload.activity_factor;
   } else if (payload.sports_days_per_week !== undefined) {
     const days = payload.sports_days_per_week;

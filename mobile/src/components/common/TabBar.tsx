@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
@@ -31,6 +32,8 @@ interface TabBarProps {
 export const TabBar: React.FC<TabBarProps> = ({ activeTab, onTabChange }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const theme = getThemeColors(isDarkMode);
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Math.max(insets.bottom, Platform.OS === 'ios' ? Spacing.sm : Spacing.xs);
 
   const handlePress = (tabKey: TabKey) => {
     if (tabKey !== activeTab) {
@@ -49,6 +52,7 @@ export const TabBar: React.FC<TabBarProps> = ({ activeTab, onTabChange }) => {
         styles.container,
         {
           borderTopColor: theme.tabBarBorder,
+          paddingBottom: bottomPadding,
         },
       ]}
     >
@@ -80,6 +84,7 @@ export const TabBar: React.FC<TabBarProps> = ({ activeTab, onTabChange }) => {
               style={styles.specialButtonWrapper}
               onPress={() => handlePress(tab.key)}
               activeOpacity={0.85}
+              hitSlop={{ top: 16, bottom: 8, left: 16, right: 16 }}
             >
               <View
                 style={[

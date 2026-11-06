@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, Animated } from 'react-native';
 import { Colors, getThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
@@ -8,9 +8,9 @@ export const TypingIndicator: React.FC = () => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const theme = getThemeColors(isDarkMode);
 
-  const dot1 = useRef(new Animated.Value(0)).current;
-  const dot2 = useRef(new Animated.Value(0)).current;
-  const dot3 = useRef(new Animated.Value(0)).current;
+  const [dot1] = useState(() => new Animated.Value(0));
+  const [dot2] = useState(() => new Animated.Value(0));
+  const [dot3] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     const createBounceAnimation = (anim: Animated.Value) => {

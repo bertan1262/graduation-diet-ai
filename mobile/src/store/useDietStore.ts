@@ -20,6 +20,15 @@ import {
   INITIAL_CUSTOM_RECIPES,
   INITIAL_WEEKLY_WEIGHT_LOGS,
 } from '../constants/mockData';
+import {
+  getLocalIsoDate,
+  parseLocalIsoDate,
+  formatTurkishWeekdayShort,
+  formatTurkishShortDate,
+  overlayCurrentWeekDatesOnPlan,
+  isPlanDatesOutOfSync,
+  refreshSeedWeightLogs,
+} from '../utils/dateUtils';
 
 export interface DailySummary {
   totalCalories: number;
@@ -113,7 +122,7 @@ export const useDietStore = create<DietStoreState>()(
       isDarkMode: false,
       hasHydrated: false,
       hasCompletedOnboarding: false,
-      lastActiveDate: new Intl.DateTimeFormat('en-CA').format(new Date()),
+      lastActiveDate: getLocalIsoDate(),
       chatMessages: INITIAL_CHAT_MESSAGES,
       dailyHistory: {},
       customWeekPlan: null,
@@ -124,7 +133,7 @@ export const useDietStore = create<DietStoreState>()(
       setHasCompletedOnboarding: (completed) => set({ hasCompletedOnboarding: completed }),
       // Clears fabricated demo intake data so a genuinely onboarded user starts clean
       startFreshUserSession: () => {
-        const todayDate = new Intl.DateTimeFormat('en-CA').format(new Date());
+        const todayDate = getLocalIsoDate();
         set({
           todayMeals: [],
           waterIntakeMl: 0,
@@ -134,11 +143,14 @@ export const useDietStore = create<DietStoreState>()(
           lastActiveDate: todayDate,
         });
       },
-      setCustomWeekPlan: (plan) => set({ customWeekPlan: plan }),
+      setCustomWeekPlan: (plan) =>
+        set({
+          customWeekPlan: overlayCurrentWeekDatesOnPlan(plan),
+        }),
       updateDayMeal: (dayIndex, mealType, meal) =>
         set((state) => {
           if (!state.customWeekPlan) return state;
-          const updated = [...state.customWeekPlan];
+          const updated = overlayCurrentWeekDatesOnPlan([...state.customWeekPlan]);
           if (updated[dayIndex]) {
             updated[dayIndex] = {
               ...updated[dayIndex],
@@ -149,15 +161,33 @@ export const useDietStore = create<DietStoreState>()(
         }),
 
       checkAndRollOverDay: () => {
-        const todayDate = new Intl.DateTimeFormat('en-CA').format(new Date());
-        const { lastActiveDate, todayMeals, streakDays, dailyHistory, waterIntakeMl, userProfile } = get();
+        const now = new Date();
+        const todayDate = getLocalIsoDate(now);
+        const {
+          lastActiveDate,
+          todayMeals,
+          streakDays,
+          dailyHistory,
+          waterIntakeMl,
+          userProfile,
+          customWeekPlan,
+          weeklyWeightLogs,
+        } = get();
+
+        const nextCustomWeekPlan =
+          customWeekPlan && customWeekPlan.length === 7 && isPlanDatesOutOfSync(customWeekPlan, now)
+            ? overlayCurrentWeekDatesOnPlan(customWeekPlan, now)
+            : undefined;
+
+        const seedRefresh = refreshSeedWeightLogs(weeklyWeightLogs, now);
 
         // If app rolls over to a new calendar date, archive yesterday's summary and clear today's active meal and water trackers
         if (lastActiveDate && lastActiveDate !== todayDate) {
           const summary = get().getDailySummary();
+          const prevDateObj = parseLocalIsoDate(lastActiveDate);
           const prevDayRecord: DailyAnalyticsRecord = {
             date: lastActiveDate,
-            dayLabel: new Intl.DateTimeFormat('tr-TR', { weekday: 'short' }).format(new Date(lastActiveDate)),
+            dayLabel: formatTurkishWeekdayShort(prevDateObj),
             calories: summary.totalCalories,
             targetCalories: userProfile.targetCalories || 2100,
             proteinGrams: summary.totalProtein,
@@ -176,8 +206,8 @@ export const useDietStore = create<DietStoreState>()(
           // Accurate calendar-based streak calculation
           let daysDiff = 1;
           try {
-            const d1 = new Date(lastActiveDate);
-            const d2 = new Date(todayDate);
+            const d1 = parseLocalIsoDate(lastActiveDate);
+            const d2 = parseLocalIsoDate(todayDate);
             const diffMs = Math.abs(d2.getTime() - d1.getTime());
             daysDiff = Math.round(diffMs / (1000 * 60 * 60 * 24));
           } catch {
@@ -193,9 +223,23 @@ export const useDietStore = create<DietStoreState>()(
             waterIntakeMl: 0,
             streakDays: nextStreak,
             lastActiveDate: todayDate,
+            ...(nextCustomWeekPlan ? { customWeekPlan: nextCustomWeekPlan } : {}),
+            ...(seedRefresh.changed ? { weeklyWeightLogs: seedRefresh.logs } : {}),
           });
-        } else if (!lastActiveDate) {
-          set({ lastActiveDate: todayDate });
+        } else {
+          const patch: Partial<DietStoreState> = {};
+          if (!lastActiveDate) {
+            patch.lastActiveDate = todayDate;
+          }
+          if (nextCustomWeekPlan) {
+            patch.customWeekPlan = nextCustomWeekPlan;
+          }
+          if (seedRefresh.changed) {
+            patch.weeklyWeightLogs = seedRefresh.logs;
+          }
+          if (Object.keys(patch).length > 0) {
+            set(patch);
+          }
         }
       },
 
@@ -282,7 +326,7 @@ export const useDietStore = create<DietStoreState>()(
       },
 
       resetDay: () => {
-        const todayDate = new Intl.DateTimeFormat('en-CA').format(new Date());
+        const todayDate = getLocalIsoDate();
         set({
           todayMeals: [],
           waterIntakeMl: 0,
@@ -310,8 +354,8 @@ export const useDietStore = create<DietStoreState>()(
                   detectedFoods: res.detectedFoods,
                 },
               });
-            } else {
-              // Fallback multi-item plate if mock or empty
+            } else if (get().useMockData) {
+              // Fallback multi-item plate ONLY when mock mode is active
               set({
                 pendingAnalysis: {
                   status: 'ready',
@@ -350,15 +394,21 @@ export const useDietStore = create<DietStoreState>()(
                   ],
                 },
               });
+            } else {
+              set({ pendingAnalysis: { status: 'idle' } });
             }
           })
           .catch(() => {
-            set({
-              pendingAnalysis: {
-                status: 'ready',
-                imageUri,
-              },
-            });
+            if (get().useMockData) {
+              set({
+                pendingAnalysis: {
+                  status: 'ready',
+                  imageUri,
+                },
+              });
+            } else {
+              set({ pendingAnalysis: { status: 'idle' } });
+            }
           });
       },
 
@@ -391,10 +441,7 @@ export const useDietStore = create<DietStoreState>()(
             : userProfile.weightKg;
         const deltaKg = Math.round((roundedNew - prevWeight) * 10) / 10;
 
-        const dateStr = new Intl.DateTimeFormat('tr-TR', {
-          day: 'numeric',
-          month: 'short',
-        }).format(new Date());
+        const dateStr = formatTurkishShortDate(new Date());
 
         const heightM = (userProfile.heightCm || 175) / 100;
         const updatedBmi = Math.round((roundedNew / (heightM * heightM)) * 10) / 10;

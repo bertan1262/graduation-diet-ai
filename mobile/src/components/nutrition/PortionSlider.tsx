@@ -4,9 +4,7 @@ import {
   Text,
   View,
   TouchableOpacity,
-  PanResponder,
   GestureResponderEvent,
-  PanResponderGestureState,
   LayoutChangeEvent,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -98,10 +96,7 @@ export const PortionSlider: React.FC<PortionSliderProps> = ({
   const [, setTrackWidth] = useState<number>(0);
   const trackWidthRef = useRef<number>(0);
   const startValueRef = useRef<number>(value);
-
-  // Keep latest props in a ref to prevent stale closures inside PanResponder callbacks
-  const latestPropsRef = useRef({ value, min, max, step, onChange });
-  latestPropsRef.current = { value, min, max, step, onChange };
+  const grantPageXRef = useRef<number>(0);
 
   const activeUnitDef =
     SERVING_UNITS.find((u) => u.id === selectedUnit) || SERVING_UNITS[0];
@@ -112,39 +107,29 @@ export const PortionSlider: React.FC<PortionSliderProps> = ({
     return Math.min(Math.max(val, minimum), maximum);
   };
 
-  // PanResponder for direct 60fps touch dragging (Zero async measure lag)
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dx) > 1,
-      // Prevent parent ScrollView from canceling the horizontal drag gesture
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (evt: GestureResponderEvent) => {
-        const { value: curVal, min: curMin, max: curMax, step: curStep, onChange: curOnChange } =
-          latestPropsRef.current;
-        startValueRef.current = curVal;
-        // Direct tap seek if tapped on the track
-        if (trackWidthRef.current > 0 && evt.nativeEvent.locationX !== undefined) {
-          const progress = clamp(evt.nativeEvent.locationX / trackWidthRef.current, 0, 1);
-          const tappedGrams = curMin + progress * (curMax - curMin);
-          const stepped = Math.round(tappedGrams / curStep) * curStep;
-          const finalVal = clamp(stepped, curMin, curMax);
-          startValueRef.current = finalVal;
-          curOnChange(finalVal);
-        }
-      },
-      onPanResponderMove: (_evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
-        const { min: curMin, max: curMax, step: curStep, onChange: curOnChange } =
-          latestPropsRef.current;
-        if (trackWidthRef.current > 0) {
-          const deltaGrams = (gestureState.dx / trackWidthRef.current) * (curMax - curMin);
-          const rawGrams = startValueRef.current + deltaGrams;
-          const stepped = Math.round(rawGrams / curStep) * curStep;
-          curOnChange(clamp(stepped, curMin, curMax));
-        }
-      },
-    })
-  ).current;
+  const handleResponderGrant = (evt: GestureResponderEvent) => {
+    grantPageXRef.current = evt.nativeEvent.pageX;
+    startValueRef.current = value;
+    // Direct tap seek if tapped on the track
+    if (trackWidthRef.current > 0 && evt.nativeEvent.locationX !== undefined) {
+      const progress = clamp(evt.nativeEvent.locationX / trackWidthRef.current, 0, 1);
+      const tappedGrams = min + progress * (max - min);
+      const stepped = Math.round(tappedGrams / step) * step;
+      const finalVal = clamp(stepped, min, max);
+      startValueRef.current = finalVal;
+      onChange(finalVal);
+    }
+  };
+
+  const handleResponderMove = (evt: GestureResponderEvent) => {
+    if (trackWidthRef.current > 0) {
+      const dx = evt.nativeEvent.pageX - grantPageXRef.current;
+      const deltaGrams = (dx / trackWidthRef.current) * (max - min);
+      const rawGrams = startValueRef.current + deltaGrams;
+      const stepped = Math.round(rawGrams / step) * step;
+      onChange(clamp(stepped, min, max));
+    }
+  };
 
   const onTrackLayout = (e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width;
@@ -241,17 +226,24 @@ export const PortionSlider: React.FC<PortionSliderProps> = ({
           <Text style={styles.stepperText}>−</Text>
         </TouchableOpacity>
 
-        {/* PanResponder Touch Track (Direct drag & seek enabled) */}
+        {/* Touch Track (Direct drag & seek enabled) */}
         <View
           style={styles.trackContainer}
           onLayout={onTrackLayout}
-          {...panResponder.panHandlers}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={handleResponderGrant}
+          onResponderMove={handleResponderMove}
         >
           {/* Background Track */}
-          <View style={styles.trackBackground} />
+          <View style={styles.trackBackground} pointerEvents="none" />
 
           {/* Filled Emerald Active Bar */}
-          <View style={[styles.trackFill, { width: `${progressPercent}%` }]} />
+          <View
+            style={[styles.trackFill, { width: `${progressPercent}%` }]}
+            pointerEvents="none"
+          />
 
           {/* Custom Draggable Thumb */}
           <View
@@ -259,8 +251,9 @@ export const PortionSlider: React.FC<PortionSliderProps> = ({
               styles.thumb,
               { left: `${progressPercent}%` },
             ]}
+            pointerEvents="none"
           >
-            <View style={styles.thumbCenterDot} />
+            <View style={styles.thumbCenterDot} pointerEvents="none" />
           </View>
         </View>
 

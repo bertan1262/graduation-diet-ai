@@ -15,11 +15,13 @@ import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useDietStore } from '../store/useDietStore';
 import { apiService } from '../services/api';
 import { OnboardingScreen } from './OnboardingScreen';
+import { DIET_TYPES } from '../components/onboarding/OnboardingConstants';
+import { refreshSeedWeightLogs, useLiveToday } from '../utils/dateUtils';
 
 export const ProfileScreen: React.FC = () => {
   const userProfile = useDietStore((state) => state.userProfile);
   const updateProfile = useDietStore((state) => state.updateProfile);
-  const weeklyWeightLogs = useDietStore((state) => state.weeklyWeightLogs);
+  const rawWeeklyWeightLogs = useDietStore((state) => state.weeklyWeightLogs);
   const addWeeklyWeightLog = useDietStore((state) => state.addWeeklyWeightLog);
   const markWeeklyLogCalibrated = useDietStore((state) => state.markWeeklyLogCalibrated);
   const useMockData = useDietStore((state) => state.useMockData);
@@ -27,6 +29,11 @@ export const ProfileScreen: React.FC = () => {
   const resetDay = useDietStore((state) => state.resetDay);
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const setHasCompletedOnboarding = useDietStore((state) => state.setHasCompletedOnboarding);
+  const { todayDate } = useLiveToday();
+  const weeklyWeightLogs = useMemo(
+    () => refreshSeedWeightLogs(rawWeeklyWeightLogs, todayDate).logs,
+    [rawWeeklyWeightLogs, todayDate]
+  );
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
   const [isEditing, setIsEditing] = useState(false);
@@ -236,7 +243,27 @@ export const ProfileScreen: React.FC = () => {
       active: 1.725,
       very_active: 1.9,
     };
-    const tdee = Math.round(bmr * (palMap[userProfile.activityLevel] || 1.55));
+    const multiplier =
+      userProfile.doesSports === false
+        ? 1.2
+        : palMap[userProfile.activityLevel] || 1.55;
+    const tdee = Math.round(bmr * multiplier);
+
+    // Respect calculationBasis === 'ideal' if configured
+    let idealBmi = 22;
+    if (a <= 24) idealBmi = 21;
+    else if (a <= 34) idealBmi = 22;
+    else if (a <= 44) idealBmi = 23;
+    else if (a <= 54) idealBmi = 24;
+    else idealBmi = 25;
+    const idealW = parseFloat((idealBmi * heightM * heightM).toFixed(1));
+    const idealBmr = Math.round(
+      isMale
+        ? 88.362 + 13.397 * idealW + 4.799 * h - 5.677 * a
+        : 447.593 + 9.247 * idealW + 3.098 * h - 4.33 * a
+    );
+    const idealTdee = Math.round(idealBmr * multiplier);
+    const effectiveTdee = userProfile.calculationBasis === 'ideal' ? idealTdee : tdee;
     const minSafeCalories = isMale ? 1400 : 1200;
 
     // CASE 1: User selected Muscle/Weight Gain, but LOST weight
@@ -245,7 +272,7 @@ export const ProfileScreen: React.FC = () => {
       const baseSurplus = Math.round(pace * 700);
       const recommendedCalories = Math.max(
         userProfile.targetCalories + 250,
-        tdee + baseSurplus + Math.round(extraBoost * 0.5)
+        effectiveTdee + baseSurplus + Math.round(extraBoost * 0.5)
       );
       return {
         logId: latestLog.id,
@@ -269,7 +296,7 @@ export const ProfileScreen: React.FC = () => {
       const baseDeficit = Math.round(pace * 900);
       const recommendedCalories = Math.max(
         minSafeCalories,
-        Math.min(userProfile.targetCalories - 200, tdee - baseDeficit)
+        Math.min(userProfile.targetCalories - 200, effectiveTdee - baseDeficit)
       );
       return {
         logId: latestLog.id,
@@ -319,10 +346,10 @@ export const ProfileScreen: React.FC = () => {
     // CASE 4: On track!
     const standardTarget =
       goal === 'weight_loss'
-        ? Math.max(minSafeCalories, tdee - Math.round(pace * 900))
+        ? Math.max(minSafeCalories, effectiveTdee - Math.round(pace * 900))
         : goal === 'muscle_gain'
-        ? tdee + Math.round(pace * 700)
-        : tdee;
+        ? effectiveTdee + Math.round(pace * 700)
+        : effectiveTdee;
 
     return {
       logId: latestLog.id,
@@ -345,9 +372,15 @@ export const ProfileScreen: React.FC = () => {
     if (!weeklyTrendAnalysis) return;
     const cal = weeklyTrendAnalysis.recommendedCalories;
     const isGain = userProfile.dietaryGoal === 'muscle_gain';
-    const newProtein = Math.round((cal * (isGain ? 0.32 : 0.3)) / 4);
-    const newCarbs = Math.round((cal * 0.4) / 4);
-    const newFat = Math.round((cal * (isGain ? 0.28 : 0.3)) / 9);
+    const selectedDiet = DIET_TYPES.find((d) => d.id === userProfile.dietType);
+
+    const pRatio = selectedDiet ? selectedDiet.macros.p : isGain ? 0.32 : 0.3;
+    const cRatio = selectedDiet ? selectedDiet.macros.c : 0.4;
+    const fRatio = selectedDiet ? selectedDiet.macros.f : isGain ? 0.28 : 0.3;
+
+    const newProtein = Math.round((cal * pRatio) / 4);
+    const newCarbs = Math.round((cal * cRatio) / 4);
+    const newFat = Math.round((cal * fRatio) / 9);
 
     updateProfile({
       bmr: weeklyTrendAnalysis.newBmr,

@@ -14,6 +14,12 @@ import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors, ThemeColors } from '../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useDietStore } from '../store/useDietStore';
+import {
+  getLocalIsoDate,
+  formatTurkishShortDate,
+  formatTurkishWeekdayShort,
+  useLiveToday,
+} from '../utils/dateUtils';
 
 const BAR_CHART_HEIGHT = 160;
 
@@ -35,6 +41,7 @@ export const AnalyticsScreen: React.FC = () => {
   const waterIntakeMl = useDietStore((state) => state.waterIntakeMl);
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const dailyHistory = useDietStore((state) => state.dailyHistory);
+  const { todayDate } = useLiveToday();
 
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = Math.max(240, screenWidth - Spacing.lg * 2 - Spacing.xl * 2);
@@ -51,24 +58,23 @@ export const AnalyticsScreen: React.FC = () => {
     const todayCarbs = Math.round(todayMeals.reduce((acc, m) => acc + m.carbsGrams, 0));
     const todayFat = Math.round(todayMeals.reduce((acc, m) => acc + m.fatGrams, 0));
 
-    const now = new Date();
-    const dateFormatter = new Intl.DateTimeFormat('tr-TR', {
-      day: 'numeric',
-      month: 'short',
-    });
-    const weekdayFormatter = new Intl.DateTimeFormat('tr-TR', { weekday: 'short' });
-
     const pastDays: DayHistoryItem[] = [];
     for (let daysAgo = 6; daysAgo >= 1; daysAgo--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - daysAgo);
-      const isoDate = new Intl.DateTimeFormat('en-CA').format(d);
+      const d = new Date(
+        todayDate.getFullYear(),
+        todayDate.getMonth(),
+        todayDate.getDate() - daysAgo,
+        12,
+        0,
+        0
+      );
+      const isoDate = getLocalIsoDate(d);
       const recorded = dailyHistory && dailyHistory[isoDate];
 
       if (recorded) {
         pastDays.push({
-          dayLabel: weekdayFormatter.format(d),
-          dateStr: dateFormatter.format(d),
+          dayLabel: formatTurkishWeekdayShort(d),
+          dateStr: formatTurkishShortDate(d),
           calories: recorded.calories,
           protein: recorded.proteinGrams,
           carbs: recorded.carbsGrams,
@@ -78,8 +84,8 @@ export const AnalyticsScreen: React.FC = () => {
         });
       } else {
         pastDays.push({
-          dayLabel: weekdayFormatter.format(d),
-          dateStr: dateFormatter.format(d),
+          dayLabel: formatTurkishWeekdayShort(d),
+          dateStr: formatTurkishShortDate(d),
           calories: 0,
           protein: 0,
           carbs: 0,
@@ -94,7 +100,7 @@ export const AnalyticsScreen: React.FC = () => {
       ...pastDays,
       {
         dayLabel: 'Bugün',
-        dateStr: dateFormatter.format(now),
+        dateStr: formatTurkishShortDate(todayDate),
         calories: todayCalories,
         protein: todayProtein,
         carbs: todayCarbs,
@@ -104,7 +110,7 @@ export const AnalyticsScreen: React.FC = () => {
         hasData: true,
       },
     ];
-  }, [todayMeals, waterIntakeMl, dailyHistory]);
+  }, [todayMeals, waterIntakeMl, dailyHistory, todayDate]);
 
   const selectedDay = weeklyData[selectedDayIndex] || weeklyData[6];
 

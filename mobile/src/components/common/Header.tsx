@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
+import { useLiveToday } from '../../utils/dateUtils';
 
 interface HeaderProps {
   title?: string;
@@ -25,6 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const toggleDarkMode = useDietStore((state) => state.toggleDarkMode);
   const theme = getThemeColors(isDarkMode);
+  const { formattedHeaderDate } = useLiveToday();
 
   const initials =
     (userName || 'Diet AI')
@@ -37,11 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
       .toUpperCase() || 'DA';
 
   // Format current date in Turkish if no custom subtitle provided
-  const formattedDate = subtitle || new Intl.DateTimeFormat('tr-TR', {
-    day: 'numeric',
-    month: 'long',
-    weekday: 'long',
-  }).format(new Date());
+  const formattedDate = subtitle || formattedHeaderDate;
 
   return (
     <View

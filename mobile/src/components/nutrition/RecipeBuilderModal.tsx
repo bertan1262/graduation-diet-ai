@@ -14,6 +14,7 @@ import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
 import { CustomRecipe, CustomRecipeIngredient, MealType } from '../../types';
+import { matchUserAllergens } from '../../utils/allergenMatcher';
 
 interface RecipeBuilderModalProps {
   visible: boolean;
@@ -99,7 +100,7 @@ export const RecipeBuilderModal: React.FC<RecipeBuilderModalProps> = ({
   visible,
   onClose,
 }) => {
-  const { customRecipes, addCustomRecipe, removeCustomRecipe, addMeal, isDarkMode } =
+  const { customRecipes, addCustomRecipe, removeCustomRecipe, addMeal, isDarkMode, userProfile } =
     useDietStore();
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
@@ -186,6 +187,13 @@ export const RecipeBuilderModal: React.FC<RecipeBuilderModalProps> = ({
 
   const handleLogSavedRecipe = (recipe: CustomRecipe) => {
     const safeServings = Math.max(1, recipe.servings);
+    const userAllergies = userProfile?.allergies || [];
+    const ingredientNames = recipe.ingredients.map((i) => i.name).join(' ');
+    const allergenCheck = matchUserAllergens({
+      foodText: `${recipe.title} ${ingredientNames}`,
+      userAllergies,
+    });
+
     addMeal({
       name: `👩‍🍳 ${recipe.title} (1 Porsiyon)`,
       portionGrams: Math.round(recipe.totalGrams / safeServings),
@@ -197,6 +205,14 @@ export const RecipeBuilderModal: React.FC<RecipeBuilderModalProps> = ({
       fiberGrams: Math.round((recipe.totalFiberGrams / safeServings) * 10) / 10,
       servingUnit: 'portion',
       servingCount: 1,
+      allergens:
+        allergenCheck.matchedUserAllergies.length > 0
+          ? allergenCheck.matchedUserAllergies
+          : undefined,
+      warningMessage:
+        allergenCheck.matchedUserAllergies.length > 0
+          ? `Alerjen Uyarısı: ${allergenCheck.matchedUserAllergies.join(', ')}`
+          : undefined,
     });
     onClose();
   };
@@ -216,6 +232,13 @@ export const RecipeBuilderModal: React.FC<RecipeBuilderModalProps> = ({
       totalGrams: totals.totalGrams,
     });
 
+    const userAllergies = userProfile?.allergies || [];
+    const ingredientNames = ingredients.map((i) => i.name).join(' ');
+    const allergenCheck = matchUserAllergens({
+      foodText: `${recipeTitle} ${ingredientNames}`,
+      userAllergies,
+    });
+
     addMeal({
       name: `👩‍🍳 ${recipeTitle.trim()} (1 Porsiyon)`,
       portionGrams: totals.perServingGrams,
@@ -227,6 +250,14 @@ export const RecipeBuilderModal: React.FC<RecipeBuilderModalProps> = ({
       fiberGrams: totals.perServingFiber,
       servingUnit: 'portion',
       servingCount: 1,
+      allergens:
+        allergenCheck.matchedUserAllergies.length > 0
+          ? allergenCheck.matchedUserAllergies
+          : undefined,
+      warningMessage:
+        allergenCheck.matchedUserAllergies.length > 0
+          ? `Alerjen Uyarısı: ${allergenCheck.matchedUserAllergies.join(', ')}`
+          : undefined,
     });
 
     setActiveTab('saved');
@@ -300,7 +331,24 @@ export const RecipeBuilderModal: React.FC<RecipeBuilderModalProps> = ({
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBody}>
             {activeTab === 'saved' ? (
               <View style={{ gap: Spacing.md }}>
-                {customRecipes.map((rec) => {
+                {customRecipes.length === 0 ? (
+                  <View style={{ alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.sm }}>
+                    <Text style={{ fontSize: 36 }}>📖</Text>
+                    <Text style={[styles.recipeTitle, { textAlign: 'center' }]}>
+                      Henüz kayıtlı özel tarifiniz yok
+                    </Text>
+                    <Text style={[styles.recipeSubtitle, { textAlign: 'center', maxWidth: 280 }]}>
+                      Kendi tariflerinizi malzeme bazında oluşturup makrolarını otomatik hesaplayabilirsiniz.
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.logRecipeBtn, { marginTop: Spacing.sm }]}
+                      onPress={() => setActiveTab('create')}
+                    >
+                      <Text style={styles.logRecipeBtnText}>+ Yeni Tarif Oluştur</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  customRecipes.map((rec) => {
                   const s = Math.max(1, rec.servings);
                   const perCal = Math.round(rec.totalCalories / s);
                   const perProt = Math.round((rec.totalProteinGrams / s) * 10) / 10;
@@ -345,7 +393,7 @@ export const RecipeBuilderModal: React.FC<RecipeBuilderModalProps> = ({
                       </TouchableOpacity>
                     </View>
                   );
-                })}
+                }))}
               </View>
             ) : (
               <View>

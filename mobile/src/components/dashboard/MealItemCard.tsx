@@ -21,6 +21,7 @@ export const MealItemCard: React.FC<MealItemCardProps> = ({ meal, onDelete, onEd
     <TouchableOpacity
       style={styles.card}
       onPress={() => onEdit && onEdit(meal)}
+      disabled={!onEdit}
       activeOpacity={onEdit ? 0.75 : 1}
     >
       {/* Left Info: Name, portion, time, warnings and macro pills */}
@@ -161,6 +162,7 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
     mealName: {
       ...Typography.bodyBold,
       color: theme.textPrimary,
+      flexShrink: 1,
     },
     metaText: {
       ...Typography.tiny,

@@ -14,6 +14,7 @@ import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
 import { LoggedMealItem, MealType } from '../../types';
 import { useDietStore } from '../../store/useDietStore';
+import { matchUserAllergens } from '../../utils/allergenMatcher';
 
 interface EditPortionModalProps {
   visible: boolean;
@@ -71,27 +72,31 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
     baseSodium: 220,
   });
 
-  const [syncedMealId, setSyncedMealId] = useState<string | null>(meal?.id ?? null);
-  if (meal && meal.id !== syncedMealId) {
-    setSyncedMealId(meal.id);
-    const g = meal.portionGrams || 150;
-    setPortionGrams(g);
-    setMealType(meal.mealType);
-    setBaseRatio({
-      baseGrams: g,
-      baseCalories: meal.calories,
-      baseProtein: meal.proteinGrams,
-      baseCarbs: meal.carbsGrams,
-      baseFat: meal.fatGrams,
-      baseFiber: meal.fiberGrams ?? Math.round((meal.carbsGrams || 0) * 0.14 * 10) / 10,
-      baseSugar: meal.sugarGrams ?? Math.round((meal.carbsGrams || 0) * 0.11 * 10) / 10,
-      baseSodium: meal.sodiumMg ?? Math.round((meal.calories || 100) * 1.1),
-    });
+  const syncKey = `${visible}-${meal?.id ?? ''}`;
+  const [prevSyncKey, setPrevSyncKey] = useState<string>(syncKey);
+  if (syncKey !== prevSyncKey) {
+    setPrevSyncKey(syncKey);
+    if (visible && meal) {
+      const g = meal.portionGrams || 150;
+      setPortionGrams(g);
+      setMealType(meal.mealType);
+      setBaseRatio({
+        baseGrams: g,
+        baseCalories: meal.calories,
+        baseProtein: meal.proteinGrams,
+        baseCarbs: meal.carbsGrams,
+        baseFat: meal.fatGrams,
+        baseFiber: meal.fiberGrams ?? Math.round((meal.carbsGrams || 0) * 0.14 * 10) / 10,
+        baseSugar: meal.sugarGrams ?? Math.round((meal.carbsGrams || 0) * 0.11 * 10) / 10,
+        baseSodium: meal.sodiumMg ?? Math.round((meal.calories || 100) * 1.1),
+      });
+    }
   }
 
   // Scaled calculations based on user adjusted grams
-  const scale = baseRatio.baseGrams > 0 ? portionGrams / baseRatio.baseGrams : 1;
-  const currentCalories = Math.max(10, Math.round(baseRatio.baseCalories * scale));
+  const safeGrams = Math.max(0, portionGrams);
+  const scale = baseRatio.baseGrams > 0 ? safeGrams / baseRatio.baseGrams : 0;
+  const currentCalories = safeGrams > 0 ? Math.max(1, Math.round(baseRatio.baseCalories * scale)) : 0;
   const currentProtein = Math.max(0, Math.round(baseRatio.baseProtein * scale * 10) / 10);
   const currentCarbs = Math.max(0, Math.round(baseRatio.baseCarbs * scale * 10) / 10);
   const currentFat = Math.max(0, Math.round(baseRatio.baseFat * scale * 10) / 10);
@@ -110,35 +115,20 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
     const warnings: { type: 'allergen' | 'clinical'; title: string; desc: string }[] = [];
 
     const mealNameLower = meal.name.toLowerCase();
-    const mealAllergens = (meal.allergens || []).map((a) => a.toLowerCase());
 
-    // 1. Allergen Check against userProfile.allergies
-    const userAllergies = userProfile.allergies || [];
-    for (const allergy of userAllergies) {
-      const aLower = allergy.toLowerCase();
-      let isMatch = false;
+    // 1. Allergen Check against userProfile.allergies using centralized matcher
+    const allergenMatch = matchUserAllergens({
+      foodText: meal.name,
+      foodAllergens: meal.allergens,
+      userAllergies: userProfile.allergies || [],
+    });
 
-      if (aLower.includes('gluten') && (mealNameLower.includes('ekmek') || mealNameLower.includes('yulaf') || mealNameLower.includes('buğday') || mealNameLower.includes('un') || mealNameLower.includes('makarna') || mealNameLower.includes('börek') || mealAllergens.includes('gluten'))) {
-        isMatch = true;
-      } else if (aLower.includes('laktoz') && (mealNameLower.includes('süt') || mealNameLower.includes('peynir') || mealNameLower.includes('yoğurt') || mealNameLower.includes('krema') || mealAllergens.includes('laktoz'))) {
-        isMatch = true;
-      } else if (aLower.includes('fındık') && (mealNameLower.includes('fındık') || mealNameLower.includes('fıstık') || mealNameLower.includes('ceviz') || mealNameLower.includes('badem') || mealAllergens.includes('fındık') || mealAllergens.includes('fıstık'))) {
-        isMatch = true;
-      } else if (aLower.includes('yumurta') && (mealNameLower.includes('yumurta') || mealNameLower.includes('omlet') || mealAllergens.includes('yumurta'))) {
-        isMatch = true;
-      } else if (aLower.includes('deniz') && (mealNameLower.includes('balık') || mealNameLower.includes('somon') || mealNameLower.includes('ton') || mealNameLower.includes('karides'))) {
-        isMatch = true;
-      } else if (mealNameLower.includes(aLower) || mealAllergens.includes(aLower)) {
-        isMatch = true;
-      }
-
-      if (isMatch) {
-        warnings.push({
-          type: 'allergen',
-          title: `⚠️ Alerjen Uyarısı: ${allergy}`,
-          desc: `Profilinizde ${allergy} hassasiyeti kayıtlıdır. Bu öğünün içeriğini kontrol ediniz.`,
-        });
-      }
+    for (const matchedAllergy of allergenMatch.matchedUserAllergies) {
+      warnings.push({
+        type: 'allergen',
+        title: `⚠️ Alerjen Uyarısı: ${matchedAllergy}`,
+        desc: `Profilinizde ${matchedAllergy} hassasiyeti kayıtlıdır. Bu öğünün içeriğini kontrol ediniz.`,
+      });
     }
 
     // 2. Clinical Condition Guardrails
@@ -171,17 +161,27 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
 
   const handleSave = () => {
     if (!meal) return;
+    const finalPortion = Math.max(10, portionGrams);
+    const finalScale = baseRatio.baseGrams > 0 ? finalPortion / baseRatio.baseGrams : 1;
+    const finalCalories = Math.max(1, Math.round(baseRatio.baseCalories * finalScale));
+    const finalProtein = Math.max(0, Math.round(baseRatio.baseProtein * finalScale * 10) / 10);
+    const finalCarbs = Math.max(0, Math.round(baseRatio.baseCarbs * finalScale * 10) / 10);
+    const finalFat = Math.max(0, Math.round(baseRatio.baseFat * finalScale * 10) / 10);
+    const finalFiber = Math.max(0, Math.round(baseRatio.baseFiber * finalScale * 10) / 10);
+    const finalSugar = Math.max(0, Math.round(baseRatio.baseSugar * finalScale * 10) / 10);
+    const finalSodium = Math.max(0, Math.round(baseRatio.baseSodium * finalScale));
+
     const updated: LoggedMealItem = {
       ...meal,
-      portionGrams,
+      portionGrams: finalPortion,
       mealType,
-      calories: currentCalories,
-      proteinGrams: currentProtein,
-      carbsGrams: currentCarbs,
-      fatGrams: currentFat,
-      fiberGrams: currentFiber,
-      sugarGrams: currentSugar,
-      sodiumMg: currentSodium,
+      calories: finalCalories,
+      proteinGrams: finalProtein,
+      carbsGrams: finalCarbs,
+      fatGrams: finalFat,
+      fiberGrams: finalFiber,
+      sugarGrams: finalSugar,
+      sodiumMg: finalSodium,
       warningMessage: safetyWarnings.length > 0 ? safetyWarnings[0].title : undefined,
     };
     onSave(updated);
@@ -332,13 +332,23 @@ export const EditPortionModal: React.FC<EditPortionModalProps> = ({
                 <TextInput
                   style={styles.gramInput}
                   keyboardType="numeric"
-                  value={portionGrams.toString()}
+                  value={portionGrams === 0 ? '' : portionGrams.toString()}
+                  placeholder="0"
+                  placeholderTextColor={theme.textMuted}
                   onChangeText={(val) => {
-                    const parsed = parseInt(val, 10);
-                    if (!isNaN(parsed)) {
-                      setPortionGrams(Math.max(10, Math.min(1500, parsed)));
-                    } else if (val === '') {
+                    const cleanVal = val.replace(/[^0-9]/g, '');
+                    if (cleanVal === '') {
                       setPortionGrams(0);
+                    } else {
+                      const parsed = parseInt(cleanVal, 10);
+                      if (!isNaN(parsed)) {
+                        setPortionGrams(Math.min(1500, parsed));
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    if (portionGrams < 10) {
+                      setPortionGrams(10);
                     }
                   }}
                   selectTextOnFocus

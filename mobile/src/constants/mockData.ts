@@ -4,7 +4,9 @@ import {
   FoodItemDetection,
   CustomRecipe,
   WeeklyWeightEntry,
+  DayPlan,
 } from '../types';
+import { getCurrentWeekDays, getDynamicInitialWeightLogs } from '../utils/dateUtils';
 
 export const DEFAULT_USER_PROFILE: UserProfile = {
   name: 'Bertan Beyal',
@@ -172,32 +174,67 @@ export const INITIAL_CUSTOM_RECIPES: CustomRecipe[] = [
   },
 ];
 
-export const INITIAL_WEEKLY_WEIGHT_LOGS: WeeklyWeightEntry[] = [
-  {
-    id: 'ww-1',
-    dateStr: '9 Eki',
-    weekLabel: '2 Hafta Önce',
-    weightKg: 65.8,
-    previousWeightKg: 66.2,
-    deltaKg: -0.4,
-    goalAtLog: 'weight_loss',
-  },
-  {
-    id: 'ww-2',
-    dateStr: '16 Eki',
-    weekLabel: 'Geçen Hafta',
-    weightKg: 65.4,
-    previousWeightKg: 65.8,
-    deltaKg: -0.4,
-    goalAtLog: 'muscle_gain',
-  },
-  {
-    id: 'ww-3',
-    dateStr: '23 Eki',
-    weekLabel: 'Bu Hafta',
-    weightKg: 65.0,
-    previousWeightKg: 65.4,
-    deltaKg: -0.4,
-    goalAtLog: 'muscle_gain',
-  },
-];
+export const INITIAL_WEEKLY_WEIGHT_LOGS: WeeklyWeightEntry[] = getDynamicInitialWeightLogs();
+
+export function getDynamicMockWeeklyPlan(referenceDate: Date = new Date()): DayPlan[] {
+  const weekDays = getCurrentWeekDays(referenceDate);
+  return weekDays.map((meta) => ({
+    dayId: meta.dayId,
+    dayName: meta.dayName,
+    dayShort: meta.dayShort,
+    dayOfMonth: meta.dayOfMonth,
+    monthName: meta.monthName,
+    isToday: meta.isToday,
+    breakfast: {
+      id: 'alt-b2',
+      title: 'Chia Tohumlu Laktozsuz Yoğurt Kasesi',
+      description: 'Laktozsuz süzme yoğurt, chia tohumu, yaban mersini ve 1 tatlı kaşığı bal.',
+      calories: 290,
+      proteinGrams: 20,
+      carbsGrams: 32,
+      fatGrams: 9,
+      tags: ['Antioksidan', 'Laktozsuz', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'balanced'],
+    },
+    lunch: {
+      id: 'alt-l1',
+      title: 'Izgara Tavuk Göğsü & Kinoa Salatası',
+      description: '180g ızgara tavuk, haşlanmış kinoa, taze Akdeniz yeşilliği ve nar ekşisi.',
+      calories: 460,
+      proteinGrams: 48,
+      carbsGrams: 34,
+      fatGrams: 12,
+      tags: ['Yağsız Kas', 'Glutensiz', 'Laktozsuz'],
+      allergens: [],
+      dietTypes: ['high_protein', 'balanced'],
+    },
+    dinner: {
+      id: 'alt-d2',
+      title: 'Hindi Sote & Fırın Tatlı Patates',
+      description: '160g jülyen hindi göğsü, renkli biberler ve fırınlanmış küp tatlı patates.',
+      calories: 430,
+      proteinGrams: 42,
+      carbsGrams: 36,
+      fatGrams: 10,
+      tags: ['Düşük Glisemik', 'Kas Onarımı', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['high_protein', 'balanced'],
+    },
+    snack: {
+      id: 'alt-s1',
+      title: 'Yeşil Elma & Kabak Çekirdeği',
+      description: 'Dilimlenmiş tarçınlı yeşil elma ve 25g kavrulmamış çiğ kabak çekirdeği.',
+      calories: 180,
+      proteinGrams: 7,
+      carbsGrams: 18,
+      fatGrams: 9,
+      tags: ['Fıstıksız', 'Kuruyemişsiz', 'Vegan', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['vegan', 'vegetarian', 'balanced'],
+    },
+  }));
+}
+
+export const MOCK_WEEKLY_PLAN: DayPlan[] = getDynamicMockWeeklyPlan();
+

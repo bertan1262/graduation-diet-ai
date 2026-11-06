@@ -16,6 +16,7 @@ import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
 import { MealType } from '../../types';
 import { useDietStore } from '../../store/useDietStore';
+import { matchUserAllergens } from '../../utils/allergenMatcher';
 
 export interface SearchFoodItem {
   id: string;
@@ -314,6 +315,7 @@ export const FoodSearchModal: React.FC<FoodSearchModalProps> = ({
 }) => {
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const addMeal = useDietStore((state) => state.addMeal);
+  const userProfile = useDietStore((state) => state.userProfile);
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
 
@@ -323,6 +325,16 @@ export const FoodSearchModal: React.FC<FoodSearchModalProps> = ({
   const [mealType, setMealType] = useState<MealType>(initialMealType);
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
   const [onlineResults, setOnlineResults] = useState<SearchFoodItem[]>([]);
+
+  // Synchronize mealType when modal opens or initialMealType changes
+  const [prevSyncKey, setPrevSyncKey] = useState(`${visible}-${initialMealType}`);
+  const currentSyncKey = `${visible}-${initialMealType}`;
+  if (currentSyncKey !== prevSyncKey) {
+    setPrevSyncKey(currentSyncKey);
+    if (visible) {
+      setMealType(initialMealType);
+    }
+  }
 
   // Filter local Turkish foods
   const filteredLocalFoods = useMemo(() => {
@@ -359,10 +371,11 @@ export const FoodSearchModal: React.FC<FoodSearchModalProps> = ({
               const name = p.product_name_tr || p.product_name;
               const brand = p.brands ? `${p.brands} - ` : '';
               const n = p.nutriments || {};
-              const cal = Math.round(n['energy-kcal_100g'] || (n['energy-kcal'] ?? 150));
-              const prot = Math.round((n['proteins_100g'] || 0) * 10) / 10;
-              const carbs = Math.round((n['carbohydrates_100g'] || 0) * 10) / 10;
-              const fat = Math.round((n['fat_100g'] || 0) * 10) / 10;
+              const rawCal = n['energy-kcal_100g'] ?? n['energy-kcal'] ?? 150;
+              const cal = Math.round(Number.isFinite(Number(rawCal)) ? Number(rawCal) : 150);
+              const prot = Math.round((n['proteins_100g'] ?? 0) * 10) / 10;
+              const carbs = Math.round((n['carbohydrates_100g'] ?? 0) * 10) / 10;
+              const fat = Math.round((n['fat_100g'] ?? 0) * 10) / 10;
               const fiber = n['fiber_100g'] ? Math.round(n['fiber_100g'] * 10) / 10 : undefined;
 
               return {
@@ -414,6 +427,12 @@ export const FoodSearchModal: React.FC<FoodSearchModalProps> = ({
     if (!selectedFood) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
 
+    const userAllergies = userProfile?.allergies || [];
+    const allergenCheck = matchUserAllergens({
+      foodText: `${selectedFood.name} ${selectedFood.categoryLabel}`,
+      userAllergies,
+    });
+
     addMeal({
       name: `${selectedFood.icon} ${selectedFood.name}`,
       portionGrams,
@@ -425,6 +444,14 @@ export const FoodSearchModal: React.FC<FoodSearchModalProps> = ({
       fiberGrams: computedNutrition.fiber,
       servingCount: 1,
       servingUnit: 'g',
+      allergens:
+        allergenCheck.matchedUserAllergies.length > 0
+          ? allergenCheck.matchedUserAllergies
+          : undefined,
+      warningMessage:
+        allergenCheck.matchedUserAllergies.length > 0
+          ? `Alerjen Uyarısı: ${allergenCheck.matchedUserAllergies.join(', ')}`
+          : undefined,
     });
 
     setSelectedFood(null);

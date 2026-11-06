@@ -171,6 +171,8 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
     actionsRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: Spacing.xs + 2,
       marginTop: Spacing.sm,
     },
     waterAddButton: {
@@ -180,7 +182,6 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.sm,
       borderRadius: BorderRadius.full,
-      marginRight: Spacing.sm,
       ...Shadows.soft,
     },
     buttonIcon: {
@@ -200,7 +201,6 @@ const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.sm,
       borderRadius: BorderRadius.full,
-      marginRight: Spacing.sm,
     },
     waterAddButtonSecondaryText: {
       ...Typography.captionBold,

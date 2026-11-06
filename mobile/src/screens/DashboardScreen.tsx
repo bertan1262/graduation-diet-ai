@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Colors, getThemeColors, ThemeColors } from '../constants/colors';
@@ -35,14 +36,13 @@ export const DashboardScreen: React.FC = () => {
   const updateMeal = useDietStore((state) => state.updateMeal);
   const removeMeal = useDietStore((state) => state.removeMeal);
   const getDailySummary = useDietStore((state) => state.getDailySummary);
+  const useMockData = useDietStore((state) => state.useMockData);
   const isDarkMode = useDietStore((state) => state.isDarkMode);
 
   const theme = getThemeColors(isDarkMode);
   const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
-  const summary = useMemo(
-    () => getDailySummary(),
-    [getDailySummary, todayMeals, waterIntakeMl, userProfile]
-  );
+  const summary = getDailySummary();
+  const isCalorieTargetReached = summary.calorieProgressPercent >= 100;
 
   const [activeSegment, setActiveSegment] = useState<'today' | 'analytics'>('today');
   const [selectedMealForEdit, setSelectedMealForEdit] = useState<LoggedMealItem | null>(
@@ -55,10 +55,10 @@ export const DashboardScreen: React.FC = () => {
 
   // Trigger milestone haptic celebration when calorie target is reached
   useEffect(() => {
-    if (summary.calorieProgressPercent >= 100) {
+    if (isCalorieTargetReached) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
-  }, [summary.calorieProgressPercent >= 100]);
+  }, [isCalorieTargetReached]);
 
   const handleQuickAdd = (mealType: MealType) => {
     const presets: Record<
@@ -240,7 +240,21 @@ export const DashboardScreen: React.FC = () => {
               {pendingAnalysis.status === 'ready' && (
                 <TouchableOpacity
                   style={styles.bgReviewButton}
-                  onPress={() => setIsPendingModalOpen(true)}
+                  onPress={() => {
+                    const hasDetectedItems =
+                      (pendingAnalysis.detectedFoods &&
+                        pendingAnalysis.detectedFoods.length > 0) ||
+                      Boolean(pendingAnalysis.detectedFood);
+                    if (!hasDetectedItems && !useMockData) {
+                      clearPendingAnalysis();
+                      Alert.alert(
+                        'Analiz Sonucu Alınamadı',
+                        'Görselde besin tespit edilemedi veya bağlantı kesildi. Lütfen tekrar fotoğraf çekin ya da manuel arama yapın.'
+                      );
+                      return;
+                    }
+                    setIsPendingModalOpen(true);
+                  }}
                   activeOpacity={0.85}
                 >
                   <Text style={styles.bgReviewButtonText}>
@@ -485,6 +499,7 @@ export const DashboardScreen: React.FC = () => {
         <FoodAnalysisModal
           visible={isPendingModalOpen}
           imageUri={pendingAnalysis.imageUri ?? null}
+          detectedFood={pendingAnalysis.detectedFood}
           detectedFoods={pendingAnalysis.detectedFoods}
           onClose={() => {
             setIsPendingModalOpen(false);

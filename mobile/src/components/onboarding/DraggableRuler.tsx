@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, Animated, PanResponder } from 'react-native';
+import { View, Text, Animated, GestureResponderEvent } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { ThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography } from '../../constants/theme';
@@ -32,92 +32,82 @@ export const DraggableRuler: React.FC<DraggableRulerProps> = ({
   onChange,
   onDragStateChange,
 }) => {
-  const latestValueRef = useRef(value);
-  latestValueRef.current = value;
-
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-
-  const onDragStateRef = useRef(onDragStateChange);
-  onDragStateRef.current = onDragStateChange;
-
+  const touchStartRef = useRef({ x: 0, y: 0 });
+  const grantPageXRef = useRef(0);
   const startValueRef = useRef(value);
   const lastEmittedStrRef = useRef(
     step < 1 ? value.toFixed(1) : String(Math.round(value))
   );
-  const subPixelAnim = useRef(new Animated.Value(0)).current;
+  const [subPixelAnim] = useState(() => new Animated.Value(0));
   const [isDragging, setIsDragging] = useState(false);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dx) > 3 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        startValueRef.current = latestValueRef.current;
-        lastEmittedStrRef.current =
-          step < 1
-            ? latestValueRef.current.toFixed(1)
-            : String(Math.round(latestValueRef.current));
-        subPixelAnim.setValue(0);
-        setIsDragging(true);
-        onDragStateRef.current?.(true);
-        Haptics.selectionAsync().catch(() => {});
-      },
-      onPanResponderMove: (_, gestureState) => {
-        // Natural tape-measure direction:
-        // Dragging LEFT (-dx) pulls higher values from the right -> INCREASES value
-        // Dragging RIGHT (+dx) pulls lower values from the left -> DECREASES value
-        const exactStepsDelta = -gestureState.dx / TICK_SLOT_WIDTH;
-        const exactNext = Math.max(
-          min,
-          Math.min(max, startValueRef.current + exactStepsDelta * step)
-        );
+  const handleTouchStart = (evt: GestureResponderEvent) => {
+    touchStartRef.current = {
+      x: evt.nativeEvent.pageX,
+      y: evt.nativeEvent.pageY,
+    };
+  };
 
-        const snappedStepsFromMin = Math.round((exactNext - min) / step);
-        const snappedVal = Math.max(
-          min,
-          Math.min(max, min + snappedStepsFromMin * step)
-        );
+  const handleMoveShouldSetResponder = (evt: GestureResponderEvent) => {
+    const dx = evt.nativeEvent.pageX - touchStartRef.current.x;
+    const dy = evt.nativeEvent.pageY - touchStartRef.current.y;
+    return Math.abs(dx) > 3 && Math.abs(dx) > Math.abs(dy);
+  };
 
-        // Continuous sub-step remainder in [-0.5, +0.5] steps -> pixel shift
-        const remainderSteps = (exactNext - snappedVal) / step;
-        subPixelAnim.setValue(-remainderSteps * TICK_SLOT_WIDTH);
+  const handleResponderGrant = (evt: GestureResponderEvent) => {
+    grantPageXRef.current = evt.nativeEvent.pageX;
+    startValueRef.current = value;
+    lastEmittedStrRef.current =
+      step < 1 ? value.toFixed(1) : String(Math.round(value));
+    subPixelAnim.setValue(0);
+    setIsDragging(true);
+    onDragStateChange?.(true);
+    Haptics.selectionAsync().catch(() => {});
+  };
 
-        const formatted =
-          step < 1
-            ? Number(snappedVal.toFixed(1)).toString()
-            : String(Math.round(snappedVal));
+  const handleResponderMove = (evt: GestureResponderEvent) => {
+    const dx = evt.nativeEvent.pageX - grantPageXRef.current;
+    // Natural tape-measure direction:
+    // Dragging LEFT (-dx) pulls higher values from the right -> INCREASES value
+    // Dragging RIGHT (+dx) pulls lower values from the left -> DECREASES value
+    const exactStepsDelta = -dx / TICK_SLOT_WIDTH;
+    const exactNext = Math.max(
+      min,
+      Math.min(max, startValueRef.current + exactStepsDelta * step)
+    );
 
-        if (formatted !== lastEmittedStrRef.current) {
-          lastEmittedStrRef.current = formatted;
-          Haptics.selectionAsync().catch(() => {});
-          onChangeRef.current(formatted);
-        }
-      },
-      onPanResponderRelease: () => {
-        setIsDragging(false);
-        onDragStateRef.current?.(false);
-        Animated.spring(subPixelAnim, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 28,
-          bounciness: 4,
-        }).start();
-      },
-      onPanResponderTerminate: () => {
-        setIsDragging(false);
-        onDragStateRef.current?.(false);
-        Animated.spring(subPixelAnim, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 28,
-          bounciness: 4,
-        }).start();
-      },
-    })
-  ).current;
+    const snappedStepsFromMin = Math.round((exactNext - min) / step);
+    const snappedVal = Math.max(
+      min,
+      Math.min(max, min + snappedStepsFromMin * step)
+    );
+
+    // Continuous sub-step remainder in [-0.5, +0.5] steps -> pixel shift
+    const remainderSteps = (exactNext - snappedVal) / step;
+    subPixelAnim.setValue(-remainderSteps * TICK_SLOT_WIDTH);
+
+    const formatted =
+      step < 1
+        ? Number(snappedVal.toFixed(1)).toString()
+        : String(Math.round(snappedVal));
+
+    if (formatted !== lastEmittedStrRef.current) {
+      lastEmittedStrRef.current = formatted;
+      Haptics.selectionAsync().catch(() => {});
+      onChange(formatted);
+    }
+  };
+
+  const finishDrag = () => {
+    setIsDragging(false);
+    onDragStateChange?.(false);
+    Animated.spring(subPixelAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 28,
+      bounciness: 4,
+    }).start();
+  };
 
   // Generate 29 ticks centered around current value
   const totalTicks = 29;
@@ -125,7 +115,14 @@ export const DraggableRuler: React.FC<DraggableRulerProps> = ({
 
   return (
     <View
-      {...panResponder.panHandlers}
+      onTouchStart={handleTouchStart}
+      onStartShouldSetResponder={() => false}
+      onMoveShouldSetResponder={handleMoveShouldSetResponder}
+      onResponderTerminationRequest={() => false}
+      onResponderGrant={handleResponderGrant}
+      onResponderMove={handleResponderMove}
+      onResponderRelease={finishDrag}
+      onResponderTerminate={finishDrag}
       style={{
         marginTop: Spacing.xs,
         paddingVertical: Spacing.sm,

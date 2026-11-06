@@ -7,9 +7,10 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Colors, getThemeColors } from '../../constants/colors';
+import { getThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
+import { useLiveToday } from '../../utils/dateUtils';
 
 export interface PromptItem {
   id: string;
@@ -58,10 +59,11 @@ export const QuickPromptChips: React.FC<QuickPromptChipsProps> = ({
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const theme = getThemeColors(isDarkMode);
   const [filterMode, setFilterMode] = useState<FilterMode>('auto');
+  const { now } = useLiveToday();
 
   // Detect time of day
   const timeContext = useMemo(() => {
-    const hour = new Date().getHours();
+    const hour = now.getHours();
     if (hour >= 5 && hour < 12) {
       return {
         label: '☀️ Sabah Önerileri',
@@ -78,7 +80,7 @@ export const QuickPromptChips: React.FC<QuickPromptChipsProps> = ({
         prompts: EVENING_PROMPTS,
       };
     }
-  }, []);
+  }, [now]);
 
   const displayedPrompts = filterMode === 'auto' ? timeContext.prompts : ALL_PROMPTS;
 

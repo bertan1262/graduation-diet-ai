@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Colors, getThemeColors } from '../../constants/colors';
+import { getThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
 
@@ -29,17 +29,44 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({
   const theme = getThemeColors(isDarkMode);
 
   // Animation values (all transforms using native driver)
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.8)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const contentSlideAnim = useRef(new Animated.Value(16)).current;
-  const exitOpacityAnim = useRef(new Animated.Value(1)).current;
-  const exitScaleAnim = useRef(new Animated.Value(1)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
+  const [fadeAnim] = useState(() => new Animated.Value(0));
+  const [scaleAnim] = useState(() => new Animated.Value(0.8));
+  const [pulseAnim] = useState(() => new Animated.Value(1));
+  const [contentSlideAnim] = useState(() => new Animated.Value(16));
+  const [exitOpacityAnim] = useState(() => new Animated.Value(1));
+  const [exitScaleAnim] = useState(() => new Animated.Value(1));
+  const [progressAnim] = useState(() => new Animated.Value(0));
 
   const [minTimeElapsed, setMinTimeElapsed] = useState(false);
   const [statusText, setStatusText] = useState('⚡ Profil verileri yükleniyor...');
   const isExitingRef = useRef(false);
+  const onFinishRef = useRef(onFinish);
+
+  useEffect(() => {
+    onFinishRef.current = onFinish;
+  }, [onFinish]);
+
+  // Synchronize Hydration & Exit Trigger
+  const triggerExit = useCallback(() => {
+    if (isExitingRef.current) return;
+    isExitingRef.current = true;
+    setStatusText('✓ Hazır!');
+
+    Animated.parallel([
+      Animated.timing(exitOpacityAnim, {
+        toValue: 0,
+        duration: 320,
+        useNativeDriver: true,
+      }),
+      Animated.timing(exitScaleAnim, {
+        toValue: 1.05,
+        duration: 320,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      onFinishRef.current();
+    });
+  }, [exitOpacityAnim, exitScaleAnim]);
 
   // 1. Entrance & Continuous Pulse Animations
   useEffect(() => {
@@ -100,35 +127,14 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({
       clearTimeout(timer);
       clearTimeout(safetyTimer);
     };
-  }, []);
+  }, [fadeAnim, scaleAnim, contentSlideAnim, progressAnim, pulseAnim, triggerExit]);
 
-  // 2. Synchronize Hydration & Exit Trigger
-  const triggerExit = () => {
-    if (isExitingRef.current) return;
-    isExitingRef.current = true;
-    setStatusText('✓ Hazır!');
-
-    Animated.parallel([
-      Animated.timing(exitOpacityAnim, {
-        toValue: 0,
-        duration: 320,
-        useNativeDriver: true,
-      }),
-      Animated.timing(exitScaleAnim, {
-        toValue: 1.05,
-        duration: 320,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      onFinish();
-    });
-  };
-
+  // 2. Exit when both hydrated and minimum splash time elapsed
   useEffect(() => {
     if (hasHydrated && minTimeElapsed && !isExitingRef.current) {
       triggerExit();
     }
-  }, [hasHydrated, minTimeElapsed]);
+  }, [hasHydrated, minTimeElapsed, triggerExit]);
 
   // Fast-forward dismiss if tapped and hydration is already done
   const handleTap = () => {

@@ -80,9 +80,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   });
 
   const [selectedAllergies, setSelectedAllergies] = useState<string[]>(
-    userProfile.allergies && userProfile.allergies.length > 0
-      ? userProfile.allergies
-      : ['🥜 Fıstık (Hafif)', '🥛 Laktoz (Düşük Tolerans)']
+    Array.isArray(userProfile.allergies) ? userProfile.allergies : []
   );
 
   // Clinical & Sports additions
@@ -90,7 +88,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
     userProfile.doesSports !== undefined ? userProfile.doesSports : true
   );
   const [sportsDaysPerWeek, setSportsDaysPerWeek] = useState<number>(
-    userProfile.sportsDaysPerWeek || 3
+    userProfile.sportsDaysPerWeek ?? 3
   );
   const [hasDiabetes, setHasDiabetes] = useState<boolean>(userProfile.hasDiabetes || false);
   const [hasCholesterol, setHasCholesterol] = useState<boolean>(
@@ -272,10 +270,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       targetCalories = baseTdee + gainSurplus;
     }
 
-    // Apply backend synced target calories if available and standard pace is selected
+    // Apply backend synced target calories if available, standard pace is selected, and ideal basis is not explicitly chosen
     const finalTargetCalories =
-      backendSyncedMetrics?.targetCalories && weeklyPaceKg === 0.5
-        ? Math.round(backendSyncedMetrics.targetCalories)
+      backendSyncedMetrics?.targetCalories &&
+      weeklyPaceKg === 0.5 &&
+      calculationBasis !== 'ideal'
+        ? Math.max(1200, Math.round(backendSyncedMetrics.targetCalories))
         : targetCalories;
 
     // 5. Recommended Macros based on selected Diet Type
@@ -356,16 +356,28 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   useEffect(() => {
     if (stage !== 'calculating') return;
 
+    const reqAge = Math.max(12, Math.min(100, parseInt(age, 10) || 22));
+    const reqHeight = Math.max(120, Math.min(230, parseFloat(heightCm) || 180));
+    const reqWeight = Math.max(35, Math.min(250, parseFloat(weightKg) || 76));
+    let reqActivityLevel: UserProfile['activityLevel'] = 'sedentary';
+    if (doesSports) {
+      if (sportsDaysPerWeek === 0) reqActivityLevel = 'sedentary';
+      else if (sportsDaysPerWeek <= 2) reqActivityLevel = 'light';
+      else if (sportsDaysPerWeek <= 4) reqActivityLevel = 'moderate';
+      else if (sportsDaysPerWeek <= 6) reqActivityLevel = 'active';
+      else reqActivityLevel = 'very_active';
+    }
+
     // Fire authoritative BMR calculation request in parallel
     apiService
       .calculateBMR({
-        weight_kg: calculatedMetrics.numWeight,
-        height_cm: calculatedMetrics.numHeight,
-        age: calculatedMetrics.numAge,
+        weight_kg: reqWeight,
+        height_cm: reqHeight,
+        age: reqAge,
         gender,
         does_sports: doesSports,
         sports_days_per_week: sportsDaysPerWeek,
-        activity_level: calculatedMetrics.derivedActivityLevel,
+        activity_level: reqActivityLevel,
         goal: dietaryGoal,
         calculation_basis: calculationBasis,
         has_diabetes: hasDiabetes,
@@ -398,7 +410,20 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
     }, 65);
 
     return () => clearInterval(interval);
-  }, [stage, gender, doesSports, sportsDaysPerWeek, calculationBasis, dietaryGoal, hasDiabetes, hasCholesterol, hasHypertension, calculatedMetrics]);
+  }, [
+    stage,
+    age,
+    heightCm,
+    weightKg,
+    gender,
+    doesSports,
+    sportsDaysPerWeek,
+    calculationBasis,
+    dietaryGoal,
+    hasDiabetes,
+    hasCholesterol,
+    hasHypertension,
+  ]);
 
   // Automatically transition from 'calculating' (100%) to 'summary'
   useEffect(() => {
@@ -411,8 +436,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   }, [stage, calcProgress]);
 
   const handleFinalizeAndStart = () => {
-    // Clean fabricated demo data for a genuinely-first-onboarding user
-    startFreshUserSession();
+    // Only wipe demo data on initial onboarding, never when editing an existing profile
+    if (!isEditing) {
+      startFreshUserSession();
+    }
 
     updateProfile({
       name: name.trim() || 'Kullanıcı',
@@ -1153,7 +1180,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
               <View style={styles.rulerHeaderRow}>
                 <Text style={styles.rulerTitle}>🎂 Doğum Yılınız & Yaşınız</Text>
                 <Text style={styles.rulerMetaBadge}>
-                  Doğum Yılı: {2026 - calculatedMetrics.numAge}
+                  Doğum Yılı: {new Date().getFullYear() - calculatedMetrics.numAge}
                 </Text>
               </View>
               <View style={styles.stepperControlRow}>

@@ -12,6 +12,11 @@ import Svg, {
 import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
 import { Spacing, BorderRadius, Typography, Shadows } from '../../constants/theme';
 import { useDietStore } from '../../store/useDietStore';
+import {
+  getLocalIsoDate,
+  formatTurkishWeekdayShort,
+  useLiveToday,
+} from '../../utils/dateUtils';
 
 type MetricType = 'calories' | 'weight';
 
@@ -31,6 +36,7 @@ export const WeeklyProgressChart: React.FC = () => {
   const todayMeals = useDietStore((state) => state.todayMeals);
   const isDarkMode = useDietStore((state) => state.isDarkMode);
   const dailyHistory = useDietStore((state) => state.dailyHistory);
+  const { todayDate } = useLiveToday();
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = Math.max(240, screenWidth - Spacing.lg * 2 - Spacing.xl * 2 - 4);
 
@@ -50,18 +56,22 @@ export const WeeklyProgressChart: React.FC = () => {
 
   const weeklyData: DayDataPoint[] = useMemo(() => {
     const curW = userProfile.weightKg || 75.6;
-    const now = new Date();
-    const weekdayFormatter = new Intl.DateTimeFormat('tr-TR', { weekday: 'short' });
 
     const pastDays: DayDataPoint[] = [];
     for (let i = 6; i >= 1; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const isoDate = new Intl.DateTimeFormat('en-CA').format(d);
+      const d = new Date(
+        todayDate.getFullYear(),
+        todayDate.getMonth(),
+        todayDate.getDate() - i,
+        12,
+        0,
+        0
+      );
+      const isoDate = getLocalIsoDate(d);
       const recorded = dailyHistory && dailyHistory[isoDate];
       if (!recorded) continue;
       pastDays.push({
-        day: weekdayFormatter.format(d),
+        day: formatTurkishWeekdayShort(d),
         calories: recorded.calories,
         weight: recorded.weightKg ?? curW,
       });
@@ -69,7 +79,7 @@ export const WeeklyProgressChart: React.FC = () => {
 
     const todayCalories = todayMeals.reduce((acc, m) => acc + m.calories, 0);
     return [...pastDays, { day: 'Bugün', calories: todayCalories, weight: curW }];
-  }, [todayMeals, userProfile.weightKg, dailyHistory]);
+  }, [todayMeals, userProfile.weightKg, dailyHistory, todayDate]);
 
   // Extract values based on active metric
   const values =
