@@ -16,10 +16,32 @@ class Base(DeclarativeBase):
     pass
 
 
+def _normalize_database_url(database_url: str) -> str:
+    """
+    Ensures SQLAlchemy 2.1+ explicitly uses the installed `psycopg2-binary` driver
+    when a plain `postgresql://` or `postgres://` URL is configured.
+    """
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return database_url
+
+
+def _engine_connect_args(database_url: str) -> dict:
+    """Fail fast (3s) when PostgreSQL is unreachable instead of hanging requests."""
+    if database_url.startswith("postgres"):
+        return {"connect_timeout": 3}
+    if database_url.startswith("sqlite"):
+        return {"check_same_thread": False}
+    return {}
+
+
 engine = create_engine(
-    settings.DATABASE_URL,
+    _normalize_database_url(settings.DATABASE_URL),
     pool_pre_ping=True,  # Verifies connection health before checkout from pool
     echo=False,
+    connect_args=_engine_connect_args(settings.DATABASE_URL),
 )
 
 SessionLocal = sessionmaker(
@@ -59,17 +81,27 @@ _mongo_client: Optional[AsyncIOMotorClient] = None
 
 
 async def init_nosql_db() -> None:
-    """Initializes the async MongoDB connection and Beanie document models."""
+    """
+    Initializes the async MongoDB connection and Beanie document models.
+    Raises if MongoDB is unreachable (checked with a `ping`, 3s timeout) so the
+    caller can decide what to do (see app/services/chat_history.py).
+    """
     global _mongo_client
     from app.models.chat_log import ChatLogDocument
 
-    _mongo_client = AsyncIOMotorClient(settings.MONGODB_URL)
-    database: AsyncIOMotorDatabase = _mongo_client[settings.MONGODB_DB_NAME]
+    client = AsyncIOMotorClient(settings.MONGODB_URL, serverSelectionTimeoutMS=3000)
+    try:
+        await client.admin.command("ping")
+        database: AsyncIOMotorDatabase = client[settings.MONGODB_DB_NAME]
+        await init_beanie(
+            database=database,
+            document_models=[ChatLogDocument],
+        )
+    except Exception:
+        client.close()
+        raise
 
-    await init_beanie(
-        database=database,
-        document_models=[ChatLogDocument],
-    )
+    _mongo_client = client
 
 
 async def close_nosql_db() -> None:

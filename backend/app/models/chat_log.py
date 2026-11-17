@@ -33,8 +33,9 @@ class ChatLogDocument(Document):
     # (e.g. {"target_calories": 2100, "consumed_today": 1450, "goal": "weight_loss"})
     user_context_snapshot: Optional[Dict[str, Any]] = None
 
-    # Performance & Model metadata
-    model_name: str = Field(default="gemini-2.5-flash")
+    # Performance & Model metadata ("guardrail" when the backend blocked the
+    # message itself and the AI service was never called)
+    model_name: str = Field(default="unknown")
     latency_ms: Optional[float] = None
     created_at: datetime = Field(default_factory=utc_now)
 

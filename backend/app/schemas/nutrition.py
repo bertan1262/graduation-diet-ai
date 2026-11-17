@@ -16,10 +16,24 @@ class FoodItemDetection(BaseModel):
     portionGrams: float
     confidenceScore: float
     nutrition: NutritionalInfo
+    allergens: Optional[List[str]] = None
+
+
+# ~10 MB decoded image is plenty for a phone photo; protects the API from huge payloads.
+MAX_IMAGE_BASE64_CHARS = 14_000_000
 
 
 class PhotoAnalysisRequest(BaseModel):
-    image_base64: str
+    image_base64: str = Field(
+        ...,
+        max_length=MAX_IMAGE_BASE64_CHARS,
+        description="Raw base64 (a `data:image/...;base64,` prefix is also accepted and stripped)",
+    )
+    meal_type: Optional[str] = Field(
+        default=None,
+        pattern="^(breakfast|lunch|dinner|snack)$",
+        description="Optional hint forwarded to the AI service",
+    )
 
 
 class RecognitionResponse(BaseModel):
@@ -27,6 +41,17 @@ class RecognitionResponse(BaseModel):
     detectedFoods: List[FoodItemDetection]
     totalNutrition: NutritionalInfo
     disclaimer: str = "Tüm porsiyon ve besin hesaplamaları yapay zekâ tahmini olup tıbbi teşhis niteliği taşımaz."
+
+
+class MealPlanDay(BaseModel):
+    """Matches `MealPlanDay` in mobile/src/types/index.ts (GET /nutrition/meal-plan)."""
+
+    dayName: str
+    breakfast: str
+    lunch: str
+    dinner: str
+    snacks: List[str]
+    targetCalories: int
 
 
 # ==============================================================================
@@ -98,6 +123,7 @@ class BMRCalculationRequest(BaseModel):
     # Goal & clinical calculation basis
     goal: str = Field(
         default="maintenance",
+        pattern="^(weight_loss|muscle_gain|maintenance)$",
         description="weight_loss, muscle_gain, or maintenance",
     )
     calculation_basis: str = Field(
