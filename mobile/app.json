@@ -5,34 +5,44 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "DietAI uses the camera to recognize food items and estimate portion sizes.",
-        "NSPhotoLibraryUsageDescription": "DietAI accesses photos to analyze meals from your library."
+        "NSPhotoLibraryUsageDescription": "DietAI accesses photos to analyze meals from your library.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        }
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0A0A0E",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "CAMERA"
       ]
     },
     "plugins": [
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow DietAI to access your camera for food recognition."
+          "cameraPermission": "Allow DietAI to access your camera for food recognition.",
+          "recordAudioAndroid": false
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DietAI yemek fotoğraflarınızı analiz etmek için galerinize erişir."
+        }
+      ],
+      "expo-secure-store",
+      "expo-status-bar"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

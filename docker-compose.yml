@@ -14,6 +14,15 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  mongodb:
+    image: mongo:7.0
+    container_name: diet_ai_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+
   backend:
     build:
       context: ./backend
@@ -22,12 +31,15 @@ services:
     restart: on-failure
     environment:
       DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/diet_ai_db
+      MONGODB_URL: mongodb://mongodb:27017
+      MONGODB_DB_NAME: diet_ai_nosql
       AI_SERVICE_URL: http://ai-service:8001
       PORT: 8000
     ports:
       - "8000:8000"
     depends_on:
       - postgres
+      - mongodb
 
   ai-service:
     build:
@@ -43,3 +55,5 @@ services:
 
 volumes:
   pgdata:
+  mongodata:
+

@@ -1,0 +1,469 @@
+import React, { useState, useMemo } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Colors, getThemeColors, ThemeColors } from '../../constants/colors';
+import { Spacing, BorderRadius, Typography } from '../../constants/theme';
+import { useDietStore } from '../../store/useDietStore';
+
+interface MacroItemProps {
+  label: string;
+  currentGrams: number;
+  targetGrams: number;
+  color: string;
+  lightColor: string;
+  unit?: string;
+  compact?: boolean;
+  metricType?: 'macro' | 'positive_target' | 'ceiling_limit';
+  theme: ThemeColors;
+  isDarkMode: boolean;
+  styles: ReturnType<typeof createStyles>;
+}
+
+export const MacroItem: React.FC<MacroItemProps> = ({
+  label,
+  currentGrams,
+  targetGrams,
+  color,
+  lightColor,
+  unit = 'g',
+  compact = false,
+  metricType = 'macro',
+  theme,
+  isDarkMode,
+  styles,
+}) => {
+  const progressRatio = targetGrams > 0 ? currentGrams / targetGrams : 0;
+  const progressPercent = Math.min(100, Math.round(progressRatio * 100));
+  const remainingGrams = Math.max(0, Math.round((targetGrams - currentGrams) * 10) / 10);
+  const isOver = currentGrams > targetGrams;
+  const isPositiveTarget = metricType === 'positive_target';
+  const isCeilingLimit = metricType === 'ceiling_limit';
+
+  const barColor = isOver
+    ? isPositiveTarget
+      ? theme.primary
+      : Colors.danger
+    : color;
+
+  const badgeBgColor = isOver
+    ? isPositiveTarget
+      ? isDarkMode
+        ? '#064E3B'
+        : '#ECFDF5'
+      : isDarkMode
+      ? '#7F1D1D'
+      : '#FEE2E2'
+    : isDarkMode
+    ? '#1E293B'
+    : lightColor;
+
+  const badgeTextColor = isOver
+    ? isPositiveTarget
+      ? isDarkMode
+        ? '#34D399'
+        : theme.primary
+      : isDarkMode
+      ? '#FCA5A5'
+      : Colors.danger
+    : color;
+
+  const footerText = isPositiveTarget
+    ? isOver
+      ? `Hedef tamamlandı (+${(currentGrams - targetGrams).toFixed(1)}${unit})`
+      : `${remainingGrams}${unit} kaldı`
+    : isCeilingLimit
+    ? isOver
+      ? `${(currentGrams - targetGrams).toFixed(unit === 'mg' ? 0 : 1)}${unit} limit aşıldı`
+      : `${remainingGrams}${unit} limit hakkı kaldı`
+    : isOver
+    ? `${(currentGrams - targetGrams).toFixed(unit === 'mg' ? 0 : 1)}${unit} aşıldı`
+    : `${remainingGrams}${unit} kaldı`;
+
+  if (compact) {
+    return (
+      <View style={styles.compactItemContainer}>
+        <View style={styles.compactHeaderRow}>
+          <View style={styles.labelGroup}>
+            <View style={[styles.colorDot, { backgroundColor: color }]} />
+            <Text style={styles.compactLabel}>{label}</Text>
+          </View>
+          <Text style={styles.compactValue}>
+            {currentGrams} / {targetGrams}{unit}
+          </Text>
+        </View>
+
+        <View style={[styles.compactTrackBar, { backgroundColor: theme.surfaceSubtle }]}>
+          <View
+            style={[
+              styles.progressBar,
+              {
+                width: `${Math.min(100, progressPercent)}%`,
+                backgroundColor: barColor,
+              },
+            ]}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.macroItemContainer}>
+      {/* Header Row: Label, Intake vs Target, Percent */}
+      <View style={styles.headerRow}>
+        <View style={styles.labelGroup}>
+          <View style={[styles.colorDot, { backgroundColor: color }]} />
+          <Text style={styles.macroLabel}>{label}</Text>
+        </View>
+
+        <View style={styles.valueGroup}>
+          <Text style={styles.currentValue}>
+            {currentGrams}
+            <Text style={styles.targetValue}>
+              {' '}
+              / {targetGrams}
+              {unit}
+            </Text>
+          </Text>
+          <View
+            style={[
+              styles.percentBadge,
+              {
+                backgroundColor: badgeBgColor,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.percentText,
+                { color: badgeTextColor },
+              ]}
+            >
+              %{progressPercent}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Horizontal Progress Track Bar */}
+      <View style={[styles.trackBar, { backgroundColor: theme.surfaceSubtle }]}>
+        <View
+          style={[
+            styles.progressBar,
+            {
+              width: `${Math.min(100, progressPercent)}%`,
+              backgroundColor: barColor,
+            },
+          ]}
+        />
+      </View>
+
+      {/* Footer: Remaining status */}
+      <View style={styles.footerRow}>
+        <Text style={styles.remainingText}>{footerText}</Text>
+      </View>
+    </View>
+  );
+};
+
+interface MacroSummaryCardProps {
+  proteinGrams: number;
+  targetProteinGrams: number;
+  carbsGrams: number;
+  targetCarbsGrams: number;
+  fatGrams: number;
+  targetFatGrams: number;
+  fiberGrams?: number;
+  sugarGrams?: number;
+  sodiumMg?: number;
+  hideTitle?: boolean;
+  compact?: boolean;
+}
+
+export const MacroBar: React.FC<MacroSummaryCardProps> = ({
+  proteinGrams,
+  targetProteinGrams,
+  carbsGrams,
+  targetCarbsGrams,
+  fatGrams,
+  targetFatGrams,
+  fiberGrams,
+  sugarGrams,
+  sodiumMg,
+  hideTitle = false,
+  compact = false,
+}) => {
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const todayMeals = useDietStore((state) => state.todayMeals);
+  const getDailySummary = useDietStore((state) => state.getDailySummary);
+
+  const [isMicroExpanded, setIsMicroExpanded] = useState(false);
+
+  const theme = getThemeColors(isDarkMode);
+  const styles = useMemo(() => createStyles(theme, isDarkMode), [theme, isDarkMode]);
+
+  // Derive micros reactively only when needed or not explicitly provided
+  const summary = useMemo(() => {
+    if (fiberGrams !== undefined && sugarGrams !== undefined && sodiumMg !== undefined && !isMicroExpanded) {
+      return null;
+    }
+    return todayMeals ? getDailySummary() : null;
+  }, [fiberGrams, sugarGrams, sodiumMg, isMicroExpanded, getDailySummary, todayMeals]);
+
+  const currentFiber = fiberGrams !== undefined ? fiberGrams : summary?.totalFiber ?? 0;
+  const currentSugar = sugarGrams !== undefined ? sugarGrams : summary?.totalSugar ?? 0;
+  const currentSodium = sodiumMg !== undefined ? sodiumMg : summary?.totalSodium ?? 0;
+
+  return (
+    <View style={styles.container}>
+      {!hideTitle && <Text style={styles.title}>Makro Besin Dengesi</Text>}
+
+      <MacroItem
+        label="Protein"
+        currentGrams={proteinGrams}
+        targetGrams={targetProteinGrams}
+        color={Colors.protein}
+        lightColor={Colors.proteinLight}
+        compact={compact}
+        theme={theme}
+        isDarkMode={isDarkMode}
+        styles={styles}
+      />
+
+      {!compact && <View style={styles.itemDivider} />}
+
+      <MacroItem
+        label="Karbonhidrat"
+        currentGrams={carbsGrams}
+        targetGrams={targetCarbsGrams}
+        color={Colors.carbs}
+        lightColor={Colors.carbsLight}
+        compact={compact}
+        theme={theme}
+        isDarkMode={isDarkMode}
+        styles={styles}
+      />
+
+      {!compact && <View style={styles.itemDivider} />}
+
+      <MacroItem
+        label="Sağlıklı Yağ"
+        currentGrams={fatGrams}
+        targetGrams={targetFatGrams}
+        color={Colors.fat}
+        lightColor={Colors.fatLight}
+        compact={compact}
+        theme={theme}
+        isDarkMode={isDarkMode}
+        styles={styles}
+      />
+
+      {/* Expandable Micronutrients & Fiber Accordion */}
+      {!compact && (
+        <TouchableOpacity
+          style={styles.accordionToggleBtn}
+          onPress={() => setIsMicroExpanded((prev) => !prev)}
+          activeOpacity={0.75}
+        >
+          <View style={styles.accordionTitleGroup}>
+            <Text style={styles.accordionIcon}>🧬</Text>
+            <Text style={styles.accordionTitleText}>
+              Mikro Besin & Lif Detayları ({currentFiber}g Lif)
+            </Text>
+          </View>
+          <Text style={styles.accordionChevron}>{isMicroExpanded ? '▴ Gizle' : '▾ Göster'}</Text>
+        </TouchableOpacity>
+      )}
+
+      {isMicroExpanded && !compact && (
+        <View style={styles.microDrawer}>
+          <MacroItem
+            label="🌾 Diyet Lifi (Fiber)"
+            currentGrams={currentFiber}
+            targetGrams={28}
+            color={Colors.primary}
+            lightColor={Colors.primaryLight}
+            unit="g"
+            metricType="positive_target"
+            theme={theme}
+            isDarkMode={isDarkMode}
+            styles={styles}
+          />
+
+          <View style={styles.itemDivider} />
+
+          <MacroItem
+            label="🍯 Serbest Şeker (Limit)"
+            currentGrams={currentSugar}
+            targetGrams={35}
+            color="#8B5CF6"
+            lightColor="#EDE9FE"
+            unit="g"
+            metricType="ceiling_limit"
+            theme={theme}
+            isDarkMode={isDarkMode}
+            styles={styles}
+          />
+
+          <View style={styles.itemDivider} />
+
+          <MacroItem
+            label="🧂 Sodyum / Tuz (Tavan)"
+            currentGrams={currentSodium}
+            targetGrams={2300}
+            color="#06B6D4"
+            lightColor="#CFFAFE"
+            unit="mg"
+            metricType="ceiling_limit"
+            theme={theme}
+            isDarkMode={isDarkMode}
+            styles={styles}
+          />
+        </View>
+      )}
+    </View>
+  );
+};
+
+const createStyles = (theme: ThemeColors, isDarkMode: boolean) =>
+  StyleSheet.create({
+    container: {
+      width: '100%',
+    },
+    title: {
+      ...Typography.h3,
+      color: theme.textPrimary,
+      marginBottom: Spacing.md,
+    },
+    macroItemContainer: {
+      marginVertical: Spacing.xs,
+    },
+    compactItemContainer: {
+      marginVertical: 4,
+    },
+    compactHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 3,
+    },
+    compactLabel: {
+      ...Typography.tiny,
+      fontWeight: '700',
+      color: theme.textPrimary,
+      fontSize: 12,
+    },
+    compactValue: {
+      ...Typography.tiny,
+      fontSize: 11,
+      color: theme.textSecondary,
+      fontWeight: '600',
+    },
+    compactTrackBar: {
+      height: 6,
+      borderRadius: BorderRadius.full,
+      overflow: 'hidden',
+    },
+    headerRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: Spacing.xs,
+    },
+    labelGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    colorDot: {
+      width: 7,
+      height: 7,
+      borderRadius: BorderRadius.full,
+      marginRight: 6,
+    },
+    macroLabel: {
+      ...Typography.bodyBold,
+      color: theme.textPrimary,
+    },
+    valueGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    currentValue: {
+      ...Typography.bodyBold,
+      color: theme.textPrimary,
+      marginRight: Spacing.sm,
+    },
+    targetValue: {
+      ...Typography.caption,
+      color: theme.textMuted,
+      fontWeight: '400',
+    },
+    percentBadge: {
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 2,
+      borderRadius: BorderRadius.full,
+    },
+    percentText: {
+      ...Typography.tiny,
+      fontWeight: '700',
+    },
+    trackBar: {
+      height: 8,
+      borderRadius: BorderRadius.full,
+      overflow: 'hidden',
+    },
+    progressBar: {
+      height: '100%',
+      borderRadius: BorderRadius.full,
+    },
+    footerRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      marginTop: 2,
+    },
+    remainingText: {
+      ...Typography.tiny,
+      color: theme.textMuted,
+    },
+    itemDivider: {
+      height: 1,
+      backgroundColor: theme.border,
+      marginVertical: Spacing.sm,
+    },
+    accordionToggleBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: Spacing.md,
+      paddingVertical: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+      backgroundColor: theme.surfaceSubtle,
+      borderRadius: BorderRadius.lg,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    accordionTitleGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    accordionIcon: {
+      fontSize: 14,
+    },
+    accordionTitleText: {
+      ...Typography.captionBold,
+      color: theme.textSecondary,
+    },
+    accordionChevron: {
+      ...Typography.tiny,
+      color: isDarkMode ? theme.primary : Colors.primaryDark,
+      fontWeight: '700',
+    },
+    microDrawer: {
+      marginTop: Spacing.sm,
+      padding: Spacing.md,
+      backgroundColor: isDarkMode ? '#0F172A' : '#F8FAFC',
+      borderRadius: BorderRadius.lg,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+  });
