@@ -1,0 +1,1272 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+} from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { Colors, getThemeColors } from '../constants/colors';
+import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useDietStore } from '../store/useDietStore';
+import { MealType, MealRecipe, DayPlan } from '../types';
+import { matchUserAllergens } from '../utils/allergenMatcher';
+import {
+  getCurrentWeekDays,
+  overlayCurrentWeekDatesOnPlan,
+  useLiveToday,
+} from '../utils/dateUtils';
+
+// Comprehensive alternative recipes pool categorized with allergens and dietary types
+export const ALTERNATIVE_MEALS: Record<MealType, MealRecipe[]> = {
+  breakfast: [
+    {
+      id: 'alt-b1',
+      title: 'Yulaflı Omlet & Lor Peyniri',
+      description: '2 yumurta, 30g yulaf ezmesi, taze maydanoz ve 50g yağsız lor peyniri.',
+      calories: 340,
+      proteinGrams: 28,
+      carbsGrams: 22,
+      fatGrams: 14,
+      tags: ['Yüksek Protein', 'Vejetaryen'],
+      allergens: ['egg', 'lactose', 'gluten'],
+      dietTypes: ['balanced', 'high_protein', 'vegetarian'],
+    },
+    {
+      id: 'alt-b2',
+      title: 'Chia Tohumlu Laktozsuz Yoğurt Kasesi',
+      description: 'Laktozsuz süzme yoğurt, chia tohumu, yaban mersini ve 1 tatlı kaşığı bal.',
+      calories: 290,
+      proteinGrams: 20,
+      carbsGrams: 32,
+      fatGrams: 9,
+      tags: ['Antioksidan', 'Laktozsuz', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'balanced'],
+    },
+    {
+      id: 'alt-b3',
+      title: 'Avokadolu Haşlanmış Yumurta Tabağı',
+      description: '2 haşlanmış yumurta, yarım ezilmiş avokado, çeri domates ve zeytin.',
+      calories: 360,
+      proteinGrams: 22,
+      carbsGrams: 10,
+      fatGrams: 26,
+      tags: ['Sağlıklı Yağ', 'Düşük Karb', 'Keto Uyumlu'],
+      allergens: ['egg'],
+      dietTypes: ['keto', 'vegetarian', 'balanced'],
+    },
+    {
+      id: 'alt-b4',
+      title: 'Izgara Füme Tofu & Sebzeli Tabak',
+      description: '150g ızgara füme tofu, avokado dilimleri, zeytin, salatalık ve domates.',
+      calories: 310,
+      proteinGrams: 24,
+      carbsGrams: 12,
+      fatGrams: 18,
+      tags: ['%100 Bitkisel', 'Vegan', 'Glutensiz', 'Laktozsuz'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'vegan', 'keto', 'balanced'],
+    },
+    {
+      id: 'alt-b5',
+      title: 'Karabuğday Patlağı & Tahinli Meyve Kasesi',
+      description: 'Glutensiz karabuğday patlağı, 1 tatlı kaşığı susam tahini, muz ve tarçın.',
+      calories: 320,
+      proteinGrams: 12,
+      carbsGrams: 42,
+      fatGrams: 12,
+      tags: ['Fıstıksız', 'Glutensiz', 'Vegan', 'Enerji'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'vegan', 'balanced'],
+    },
+    {
+      id: 'alt-b6',
+      title: 'Menemen & Glutensiz Mısır Ekmeği',
+      description: '2 yumurta, domates, yeşil biber ve yanında 1 dilim glutensiz karabuğday ekmeği.',
+      calories: 350,
+      proteinGrams: 21,
+      carbsGrams: 24,
+      fatGrams: 18,
+      tags: ['Laktozsuz', 'Glutensiz', 'Geleneksel'],
+      allergens: ['egg'],
+      dietTypes: ['vegetarian', 'balanced'],
+    },
+  ],
+  lunch: [
+    {
+      id: 'alt-l1',
+      title: 'Izgara Tavuk Göğsü & Kinoa Salatası',
+      description: '180g ızgara tavuk, haşlanmış kinoa, taze Akdeniz yeşilliği ve nar ekşisi.',
+      calories: 460,
+      proteinGrams: 48,
+      carbsGrams: 34,
+      fatGrams: 12,
+      tags: ['Yağsız Kas', 'Glutensiz', 'Laktozsuz'],
+      allergens: [],
+      dietTypes: ['high_protein', 'balanced'],
+    },
+    {
+      id: 'alt-l2',
+      title: 'Mercimek Çorbası & Fırın Dana Köfte',
+      description: '1 kase süzme mercimek çorbası ve 150g yağsız dana köfte yanında ızgara biber.',
+      calories: 490,
+      proteinGrams: 42,
+      carbsGrams: 38,
+      fatGrams: 16,
+      tags: ['Demir Kaynağı', 'Lifli'],
+      allergens: ['gluten'],
+      dietTypes: ['high_protein', 'balanced'],
+    },
+    {
+      id: 'alt-l3',
+      title: 'Fırında Somon & Buharda Brokoli',
+      description: '200g Norveç somonu, buharda brokoli, havuç ve zeytinyağlı limon sosu.',
+      calories: 520,
+      proteinGrams: 44,
+      carbsGrams: 12,
+      fatGrams: 32,
+      tags: ['Omega-3', 'Keto Uyumlu', 'Glutensiz', 'Laktozsuz'],
+      allergens: ['seafood'],
+      dietTypes: ['keto', 'high_protein', 'balanced'],
+    },
+    {
+      id: 'alt-l4',
+      title: 'Nohutlu & Avokadolu Kinoa Salatası',
+      description: '150g haşlanmış nohut, kinoa, avokado, Akdeniz yeşilliği ve zeytinyağı.',
+      calories: 440,
+      proteinGrams: 22,
+      carbsGrams: 52,
+      fatGrams: 16,
+      tags: ['Vejetaryen', 'Vegan', 'Glutensiz', 'Laktozsuz'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'vegan', 'balanced'],
+    },
+    {
+      id: 'alt-l5',
+      title: 'Fırında Sebzeli Tofu & Yeşil Mercimek',
+      description: '160g fırınlanmış marineli tofu, haşlanmış yeşil mercimek ve közlenmiş kapya biber.',
+      calories: 450,
+      proteinGrams: 34,
+      carbsGrams: 42,
+      fatGrams: 14,
+      tags: ['Yüksek Protein', 'Vegan', 'Vejetaryen', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'vegan', 'balanced'],
+    },
+    {
+      id: 'alt-l6',
+      title: 'Zeytinyağlı Enginar & Karabuğday Salatası',
+      description: 'Garnitürlü enginar kalpleri, taze dereotu ve nar ekşili karabuğday tabule.',
+      calories: 390,
+      proteinGrams: 16,
+      carbsGrams: 48,
+      fatGrams: 15,
+      tags: ['Karaciğer Dostu', 'Vegan', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'vegan', 'balanced'],
+    },
+  ],
+  dinner: [
+    {
+      id: 'alt-d1',
+      title: 'Zeytinyağlı Taze Fasulye & Laktozsuz Yoğurt',
+      description: 'Geleneksel zeytinyağlı taze fasulye ve yanında 150g laktozsuz probiyotik yoğurt.',
+      calories: 320,
+      proteinGrams: 16,
+      carbsGrams: 28,
+      fatGrams: 14,
+      tags: ['Hafif Sindirim', 'Laktozsuz', 'Vejetaryen'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'balanced'],
+    },
+    {
+      id: 'alt-d2',
+      title: 'Hindi Sote & Fırın Tatlı Patates',
+      description: '160g jülyen hindi göğsü, renkli biberler ve fırınlanmış küp tatlı patates.',
+      calories: 430,
+      proteinGrams: 42,
+      carbsGrams: 36,
+      fatGrams: 10,
+      tags: ['Düşük Glisemik', 'Kas Onarımı', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['high_protein', 'balanced'],
+    },
+    {
+      id: 'alt-d3',
+      title: 'Izgara Levrek & Roka Salatası',
+      description: 'Deniz levreği fileto, cevizsiz taze roka salatası ve fırınlanmış sarımsaklı kabak.',
+      calories: 380,
+      proteinGrams: 38,
+      carbsGrams: 8,
+      fatGrams: 22,
+      tags: ['Akdeniz Diyeti', 'Keto Uyumlu', 'Glutensiz', 'Laktozsuz'],
+      allergens: ['seafood'],
+      dietTypes: ['keto', 'high_protein', 'balanced'],
+    },
+    {
+      id: 'alt-d4',
+      title: 'Fırında Mantarlı & Mercimekli Güveç',
+      description: 'İstiridye mantarı, yeşil mercimek, domates sosu ve fırınlanmış kabak dilimleri.',
+      calories: 360,
+      proteinGrams: 24,
+      carbsGrams: 42,
+      fatGrams: 11,
+      tags: ['Vegan', 'Vejetaryen', 'Yüksek Lif', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'vegan', 'balanced'],
+    },
+    {
+      id: 'alt-d5',
+      title: 'Köz Patlıcanlı Nohut Yemeği & Kinoa',
+      description: 'Közlenmiş bostan patlıcanı, kimyonlu nohut yemeği ve yanında haşlanmış kinoa.',
+      calories: 390,
+      proteinGrams: 20,
+      carbsGrams: 48,
+      fatGrams: 12,
+      tags: ['Bitkisel Protein', 'Vegan', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'vegan', 'balanced'],
+    },
+    {
+      id: 'alt-d6',
+      title: 'Buharda Sebzeler & Fırın Hellimli Salata',
+      description: 'Izgara hellim peyniri, buharda brokoli, taze kekik ve zeytinyağlı sos.',
+      calories: 350,
+      proteinGrams: 22,
+      carbsGrams: 12,
+      fatGrams: 24,
+      tags: ['Keto Uyumlu', 'Vejetaryen', 'Düşük Karb'],
+      allergens: ['lactose'],
+      dietTypes: ['vegetarian', 'keto', 'balanced'],
+    },
+  ],
+  snack: [
+    {
+      id: 'alt-s1',
+      title: 'Yeşil Elma & Kabak Çekirdeği',
+      description: 'Dilimlenmiş tarçınlı yeşil elma ve 25g kavrulmamış çiğ kabak çekirdeği.',
+      calories: 180,
+      proteinGrams: 7,
+      carbsGrams: 18,
+      fatGrams: 9,
+      tags: ['Fıstıksız', 'Kuruyemişsiz', 'Vegan', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['vegan', 'vegetarian', 'balanced'],
+    },
+    {
+      id: 'alt-s2',
+      title: 'Fıstık Ezmeli Muz Dilimleri',
+      description: '1 orta boy muz ve 1 tatlı kaşığı şekersiz fıstık ezmesi.',
+      calories: 210,
+      proteinGrams: 5,
+      carbsGrams: 32,
+      fatGrams: 8,
+      tags: ['Antrenman Öncesi', 'Potasyum'],
+      allergens: ['peanut'],
+      dietTypes: ['vegetarian', 'vegan', 'balanced'],
+    },
+    {
+      id: 'alt-s3',
+      title: 'Laktozsuz Sade Kefir & Yaban Mersini',
+      description: '200ml laktozsuz probiyotik kefir ve 1 avuç taze yaban mersini.',
+      calories: 150,
+      proteinGrams: 9,
+      carbsGrams: 18,
+      fatGrams: 4,
+      tags: ['Bağırsak Dostu', 'Laktozsuz', 'Glutensiz'],
+      allergens: [],
+      dietTypes: ['vegetarian', 'balanced'],
+    },
+    {
+      id: 'alt-s4',
+      title: 'Havuç-Salatalık & Zeytinyağlı Humus',
+      description: 'Taze çıtır sebze çubukları ve 60g ev yapımı kimyonlu humus.',
+      calories: 160,
+      proteinGrams: 6,
+      carbsGrams: 16,
+      fatGrams: 8,
+      tags: ['Fıstıksız', 'Vegan', 'Glutensiz', 'Düşük Kalori'],
+      allergens: [],
+      dietTypes: ['vegan', 'vegetarian', 'keto', 'balanced'],
+    },
+    {
+      id: 'alt-s5',
+      title: 'Cevizli Kuru Kayısı Tabağı',
+      description: '3 adet gün kurusu kayısı ve 3 tam ceviz içi.',
+      calories: 190,
+      proteinGrams: 4,
+      carbsGrams: 26,
+      fatGrams: 9,
+      tags: ['Lif Kaynağı', 'Doğal Şeker'],
+      allergens: ['peanut'],
+      dietTypes: ['vegetarian', 'vegan', 'balanced'],
+    },
+  ],
+};
+
+/**
+ * Returns specific allergen conflicts between a recipe and user's declared allergies.
+ */
+export function getAllergenWarnings(meal: MealRecipe, userAllergies: string[] = []): string[] {
+  if (!userAllergies || userAllergies.length === 0) return [];
+  const match = matchUserAllergens({
+    foodText: `${meal.title} ${meal.description}`,
+    foodAllergens: meal.allergens,
+    userAllergies,
+  });
+  return match.canonicalLabels;
+}
+
+/**
+ * Checks whether a recipe is 100% compliant with the user's allergies, dietary goal, and dietType.
+ */
+export function isMealSafeForProfile(
+  meal: MealRecipe,
+  userAllergies: string[] = [],
+  dietaryGoal?: string,
+  dietType?: string
+): boolean {
+  if (userAllergies && userAllergies.length > 0) {
+    const warnings = getAllergenWarnings(meal, userAllergies);
+    if (warnings.length > 0) {
+      return false;
+    }
+
+    const allergyLower = userAllergies.join(' ').toLowerCase();
+
+    // Vejetaryen Tercihi
+    if (allergyLower.includes('vejetaryen') && !meal.dietTypes?.includes('vegetarian')) {
+      return false;
+    }
+    // Ketojenik Tercihi (allergies chip)
+    if (allergyLower.includes('ketojenik')) {
+      if (!meal.dietTypes?.includes('keto') && meal.carbsGrams > 22) {
+        return false;
+      }
+    }
+  }
+
+  // Diet Type Filtering
+  if (dietType === 'keto') {
+    if (!meal.dietTypes?.includes('keto') && meal.carbsGrams > 22) {
+      return false;
+    }
+  } else if (dietType === 'low_carb') {
+    if (!meal.dietTypes?.includes('keto') && meal.carbsGrams > 32) {
+      return false;
+    }
+  } else if (dietType === 'high_protein') {
+    if (
+      !meal.dietTypes?.includes('high_protein') &&
+      meal.proteinGrams < 20 &&
+      meal.calories > 250
+    ) {
+      return false;
+    }
+  } else if (dietType === 'mediterranean') {
+    if (meal.dietTypes && meal.dietTypes.includes('mediterranean')) {
+      // Explicitly tagged Mediterranean dish
+    } else if (meal.fatGrams < 8 && meal.calories > 250) {
+      return false;
+    }
+  }
+
+  if (dietaryGoal === 'muscle_gain' && meal.calories > 250 && meal.proteinGrams < 15) {
+    return false;
+  }
+
+  return true;
+}
+
+function pickSafeMealForSlot(
+  type: MealType,
+  dayIndex: number,
+  offset: number,
+  allergies: string[],
+  goal?: string,
+  dietType?: string
+): MealRecipe {
+  const allForType = ALTERNATIVE_MEALS[type];
+  const strictlySafe = allForType.filter((m) =>
+    isMealSafeForProfile(m, allergies, goal, dietType)
+  );
+  if (strictlySafe.length > 0) {
+    return strictlySafe[(dayIndex + offset) % strictlySafe.length];
+  }
+  const allergenSafe = allForType.filter((m) => isMealSafeForProfile(m, allergies));
+  const pool = allergenSafe.length > 0 ? allergenSafe : allForType;
+  return pool[(dayIndex + offset) % pool.length];
+}
+
+/**
+ * Generates a dynamic 7-day meal plan strictly filtered against user's allergies and preferences,
+ * with real calendar dates computed for the current week.
+ */
+export function generatePersonalizedWeekPlan(
+  allergies: string[],
+  goal: string,
+  dietType?: string,
+  referenceDate: Date = new Date()
+): DayPlan[] {
+  const weekDays = getCurrentWeekDays(referenceDate);
+
+  return weekDays.map((meta, dayIndex) => ({
+    dayId: meta.dayId,
+    dayName: meta.dayName,
+    dayShort: meta.dayShort,
+    dayOfMonth: meta.dayOfMonth,
+    monthName: meta.monthName,
+    isToday: meta.isToday,
+    breakfast: pickSafeMealForSlot('breakfast', dayIndex, 0, allergies, goal, dietType),
+    lunch: pickSafeMealForSlot('lunch', dayIndex, 1, allergies, goal, dietType),
+    dinner: pickSafeMealForSlot('dinner', dayIndex, 2, allergies, goal, dietType),
+    snack: pickSafeMealForSlot('snack', dayIndex, 3, allergies, goal, dietType),
+  }));
+}
+
+export const MealPlanScreen: React.FC = () => {
+  const userProfile = useDietStore((state) => state.userProfile);
+  const addMeal = useDietStore((state) => state.addMeal);
+  const isDarkMode = useDietStore((state) => state.isDarkMode);
+  const customWeekPlan = useDietStore((state) => state.customWeekPlan);
+  const setCustomWeekPlan = useDietStore((state) => state.setCustomWeekPlan);
+  const updateDayMeal = useDietStore((state) => state.updateDayMeal);
+  const theme = getThemeColors(isDarkMode);
+
+  // Live reactive today state (updates on foreground return and midnight rollover)
+  const { todayDate, todayKey, todayMondayIndex, weekDays } = useLiveToday();
+  const currentWeekMondayIso = weekDays[0]?.isoDate ?? todayKey;
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => todayMondayIndex);
+  const [lastSyncedToday, setLastSyncedToday] = useState<{
+    key: string;
+    index: number;
+    weekMondayIso: string;
+  }>(() => ({
+    key: todayKey,
+    index: todayMondayIndex,
+    weekMondayIso: currentWeekMondayIso,
+  }));
+
+  // Shift selected day tab to the new today when the calendar day rolls over
+  // if the user was viewing the previous today (or if the entire week rolled over)
+  if (todayKey !== lastSyncedToday.key) {
+    const wasViewingPreviousToday = selectedDayIndex === lastSyncedToday.index;
+    const didWeekRollOver = currentWeekMondayIso !== lastSyncedToday.weekMondayIso;
+    setLastSyncedToday({
+      key: todayKey,
+      index: todayMondayIndex,
+      weekMondayIso: currentWeekMondayIso,
+    });
+    if (wasViewingPreviousToday || didWeekRollOver) {
+      setSelectedDayIndex(todayMondayIndex);
+    }
+  }
+
+  // Initialize or automatically sanitize customWeekPlan when allergies, dietaryGoal, dietType, or calendar week change
+  useEffect(() => {
+    const allergies = userProfile.allergies || [];
+    const goal = userProfile.dietaryGoal || 'weight_loss';
+    const dietType = userProfile.dietType || 'balanced';
+
+    if (!customWeekPlan || customWeekPlan.length !== 7) {
+      setCustomWeekPlan(generatePersonalizedWeekPlan(allergies, goal, dietType, todayDate));
+      return;
+    }
+
+    let needsUpdate = false;
+    const sanitizedPlan = customWeekPlan.map((day, dayIdx) => {
+      const meta = weekDays[dayIdx];
+      const nextBreakfast = isMealSafeForProfile(day.breakfast, allergies, goal, dietType)
+        ? day.breakfast
+        : pickSafeMealForSlot('breakfast', dayIdx, 0, allergies, goal, dietType);
+      const nextLunch = isMealSafeForProfile(day.lunch, allergies, goal, dietType)
+        ? day.lunch
+        : pickSafeMealForSlot('lunch', dayIdx, 1, allergies, goal, dietType);
+      const nextDinner = isMealSafeForProfile(day.dinner, allergies, goal, dietType)
+        ? day.dinner
+        : pickSafeMealForSlot('dinner', dayIdx, 2, allergies, goal, dietType);
+      const nextSnack = isMealSafeForProfile(day.snack, allergies, goal, dietType)
+        ? day.snack
+        : pickSafeMealForSlot('snack', dayIdx, 3, allergies, goal, dietType);
+
+      const mealsChanged =
+        nextBreakfast.id !== day.breakfast.id ||
+        nextLunch.id !== day.lunch.id ||
+        nextDinner.id !== day.dinner.id ||
+        nextSnack.id !== day.snack.id;
+
+      const datesChanged =
+        Boolean(meta) &&
+        (day.dayId !== meta.dayId ||
+          day.dayName !== meta.dayName ||
+          day.dayShort !== meta.dayShort ||
+          day.dayOfMonth !== meta.dayOfMonth ||
+          day.monthName !== meta.monthName ||
+          day.isToday !== meta.isToday);
+
+      if (mealsChanged || datesChanged) {
+        needsUpdate = true;
+        return {
+          ...day,
+          ...(meta
+            ? {
+                dayId: meta.dayId,
+                dayName: meta.dayName,
+                dayShort: meta.dayShort,
+                dayOfMonth: meta.dayOfMonth,
+                monthName: meta.monthName,
+                isToday: meta.isToday,
+              }
+            : {}),
+          breakfast: nextBreakfast,
+          lunch: nextLunch,
+          dinner: nextDinner,
+          snack: nextSnack,
+        };
+      }
+      return day;
+    });
+
+    if (needsUpdate) {
+      setCustomWeekPlan(sanitizedPlan);
+    }
+  }, [
+    userProfile.allergies,
+    userProfile.dietaryGoal,
+    userProfile.dietType,
+    customWeekPlan,
+    setCustomWeekPlan,
+    todayDate,
+    weekDays,
+  ]);
+
+  const effectiveWeekPlan: DayPlan[] = useMemo(() => {
+    const basePlan =
+      customWeekPlan && customWeekPlan.length === 7
+        ? customWeekPlan
+        : generatePersonalizedWeekPlan(
+            userProfile.allergies || [],
+            userProfile.dietaryGoal || 'weight_loss',
+            userProfile.dietType || 'balanced',
+            todayDate
+          );
+    return overlayCurrentWeekDatesOnPlan(basePlan, todayDate);
+  }, [
+    customWeekPlan,
+    userProfile.allergies,
+    userProfile.dietaryGoal,
+    userProfile.dietType,
+    todayDate,
+  ]);
+
+  const activeDay = effectiveWeekPlan[selectedDayIndex] || effectiveWeekPlan[0];
+
+  // Calculate day total metrics
+  const totalPlannedCalories =
+    activeDay.breakfast.calories +
+    activeDay.lunch.calories +
+    activeDay.dinner.calories +
+    activeDay.snack.calories;
+
+  const totalPlannedProtein =
+    activeDay.breakfast.proteinGrams +
+    activeDay.lunch.proteinGrams +
+    activeDay.dinner.proteinGrams +
+    activeDay.snack.proteinGrams;
+
+  // Swap single meal with next safe alternative recipe and persist in store
+  const handleSwapMeal = (mealType: MealType) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    const allergies = userProfile.allergies || [];
+    const allForType = ALTERNATIVE_MEALS[mealType];
+    const safeAlternatives = allForType.filter((m) =>
+      isMealSafeForProfile(m, allergies, userProfile.dietaryGoal, userProfile.dietType)
+    );
+    const allergenSafe = allForType.filter((m) => isMealSafeForProfile(m, allergies));
+    const pool =
+      safeAlternatives.length > 0
+        ? safeAlternatives
+        : allergenSafe.length > 0
+        ? allergenSafe
+        : allForType;
+
+    const currentId = activeDay[mealType].id;
+    const currentIndex = pool.findIndex((m) => m.id === currentId);
+    const nextIndex = (currentIndex + 1) % pool.length;
+    const nextMeal = pool[nextIndex];
+
+    updateDayMeal(selectedDayIndex, mealType, nextMeal);
+
+    Alert.alert('Öğün Yenilendi! 🔄', `Profilinize uygun yeni seçim: "${nextMeal.title}" (${nextMeal.calories} kcal)`);
+  };
+
+  // Log meal directly to user's daily Dashboard
+  const handleLogMealToToday = (meal: MealRecipe, mealType: MealType) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const matchedAllergens = getAllergenWarnings(meal, userProfile.allergies);
+    const estimatedPortion =
+      meal.portionGrams || (mealType === 'snack' ? 60 : mealType === 'breakfast' ? 180 : 250);
+
+    addMeal({
+      name: meal.title,
+      portionGrams: estimatedPortion,
+      mealType,
+      calories: meal.calories,
+      proteinGrams: meal.proteinGrams,
+      carbsGrams: meal.carbsGrams,
+      fatGrams: meal.fatGrams,
+      allergens: matchedAllergens.length > 0 ? matchedAllergens : undefined,
+      warningMessage:
+        matchedAllergens.length > 0
+          ? `Alerjen Uyarısı: ${matchedAllergens.join(', ')}`
+          : undefined,
+    });
+
+    Alert.alert('Günlüğe Eklendi! ✅', `"${meal.title}" bugünkü kalori halkanıza başarıyla eklendi.`);
+  };
+
+  const renderMealCard = (meal: MealRecipe, mealType: MealType, titleLabel: string, icon: string) => {
+    const allergenWarnings = getAllergenWarnings(meal, userProfile.allergies);
+    const hasUserAllergies = (userProfile.allergies || []).length > 0;
+
+    return (
+      <View
+        style={[
+          styles.mealCard,
+          { backgroundColor: theme.surface, borderColor: theme.border },
+        ]}
+        key={`${mealType}-${meal.id}`}
+      >
+        <View style={styles.mealHeaderRow}>
+          <View style={styles.mealTitleGroup}>
+            <Text style={styles.mealTypeIcon}>{icon}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.mealTypeLabel, { color: theme.textMuted }]}>{titleLabel}</Text>
+              <Text style={[styles.mealTitle, { color: theme.textPrimary }]}>{meal.title}</Text>
+            </View>
+          </View>
+          <Text
+            style={[
+              styles.mealCaloriesBadge,
+              {
+                color: isDarkMode ? theme.primary : Colors.primaryDark,
+                backgroundColor: isDarkMode ? theme.primaryMuted : Colors.primaryLight,
+              },
+            ]}
+          >
+            {meal.calories} kcal
+          </Text>
+        </View>
+
+        <Text style={[styles.mealDescription, { color: theme.textSecondary }]}>{meal.description}</Text>
+
+        {/* Allergen Warning / Security Badges */}
+        {allergenWarnings.length > 0 && (
+          <View
+            style={[
+              styles.allergenAlertCard,
+              {
+                backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.35)' : '#FCA5A5',
+              },
+            ]}
+          >
+            <View style={styles.allergenAlertHeader}>
+              <Text style={styles.allergenAlertIcon}>⚠️</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.allergenAlertTitle, { color: theme.danger }]}>
+                  Alerjen Riski: {allergenWarnings.join(', ')}
+                </Text>
+                <Text style={[styles.allergenAlertSub, { color: theme.textSecondary }]}>
+                  Profilinizdeki alerji tercihiyle çakışıyor. Güvenli tarifle değiştirebilirsiniz.
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.allergenQuickSwapBtn, { backgroundColor: theme.danger }]}
+              onPress={() => handleSwapMeal(mealType)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.allergenQuickSwapText}>🛡️ Güvenli Tarif Seç 🔄</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {hasUserAllergies && allergenWarnings.length === 0 && (
+          <View
+            style={[
+              styles.allergenSafeBadge,
+              {
+                backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
+                borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#A7F3D0',
+              },
+            ]}
+          >
+            <Text style={[styles.allergenSafeText, { color: theme.primary }]}>
+              🛡️ Alerjen Güvenli • Profilinizdeki alerji filtrelerine uygundur
+            </Text>
+          </View>
+        )}
+
+        {/* Macro breakdown */}
+        <View style={styles.macroPillsRow}>
+          <View style={[styles.macroPill, { backgroundColor: isDarkMode ? 'rgba(59, 130, 246, 0.2)' : Colors.proteinLight }]}>
+            <Text style={[styles.macroPillText, { color: theme.protein }]}>
+              🍗 {meal.proteinGrams}g Protein
+            </Text>
+          </View>
+          <View style={[styles.macroPill, { backgroundColor: isDarkMode ? 'rgba(245, 158, 11, 0.2)' : Colors.carbsLight }]}>
+            <Text style={[styles.macroPillText, { color: theme.calories }]}>
+              🌾 {meal.carbsGrams}g Karb
+            </Text>
+          </View>
+          <View style={[styles.macroPill, { backgroundColor: isDarkMode ? 'rgba(236, 72, 153, 0.2)' : Colors.fatLight }]}>
+            <Text style={[styles.macroPillText, { color: theme.fat }]}>
+              🥑 {meal.fatGrams}g Yağ
+            </Text>
+          </View>
+        </View>
+
+        {/* Recipe Tag Chips (e.g. Glutensiz, Laktozsuz, Vejetaryen) */}
+        {meal.tags && meal.tags.length > 0 && (
+          <View style={styles.recipeTagsRow}>
+            {meal.tags.map((tag, tIdx) => (
+              <View
+                key={`tag-${tIdx}`}
+                style={[
+                  styles.recipeTagBadge,
+                  { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
+                ]}
+              >
+                <Text style={[styles.recipeTagText, { color: theme.textSecondary }]}>✓ {tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Action Buttons */}
+        <View style={[styles.cardActionsRow, { borderTopColor: theme.border }]}>
+          <TouchableOpacity
+            style={[
+              styles.swapButton,
+              { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
+            ]}
+            onPress={() => handleSwapMeal(mealType)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.swapButtonText, { color: theme.textSecondary }]}>🔄 Alternatif Sun</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.logButton, { backgroundColor: theme.primary }]}
+            onPress={() => handleLogMealToToday(meal, mealType)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.logButtonText}>➕ Günlüğe Ekle</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <ScrollView
+      contentContainerStyle={[styles.container, { backgroundColor: theme.background }]}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Header Info Banner with Personalization Badges */}
+      <View style={[styles.planHeaderCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.badgeRow}>
+          <View style={[styles.aiBadge, isDarkMode && { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: '#10B981' }]}>
+            <Text style={[styles.aiBadgeText, { color: theme.primary }]}>✨ Gemini Akıllı Plan</Text>
+          </View>
+          <View style={[styles.goalPill, { backgroundColor: theme.surfaceSubtle }]}>
+            <Text style={[styles.goalPillText, { color: theme.textSecondary }]}>
+              {userProfile.dietaryGoal === 'weight_loss'
+                ? '🔥 Yağ Yakımı (-400 kcal)'
+                : userProfile.dietaryGoal === 'muscle_gain'
+                ? '💪 Kas Kazanımı (+300 kcal)'
+                : '⚖️ Denge & Koruma'}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Haftalık Beslenme Rehberiniz</Text>
+        <Text style={[styles.headerDesc, { color: theme.textMuted }]}>
+          {userProfile.name} için günlük {userProfile.targetCalories} kcal hedefi ve metabolik gereksinimlerinize göre dengelenmiş 7 günlük menü.
+        </Text>
+
+        {/* Active Allergen & Dietary Preference Filter HUD */}
+        <View style={[styles.filterBanner, { borderTopColor: theme.border }]}>
+          <View style={styles.filterBannerHeader}>
+            <Text style={[styles.filterBannerTitle, { color: theme.textSecondary }]}>
+              🛡️ Aktif Alerjen & Tercih Filtreleri:
+            </Text>
+            <View style={[styles.safetyVerifiedBadge, isDarkMode && { backgroundColor: 'rgba(34, 197, 94, 0.2)', borderColor: '#22C55E' }]}>
+              <Text style={[styles.safetyVerifiedText, isDarkMode && { color: '#4ADE80' }]}>✓ %100 Uyumlu</Text>
+            </View>
+          </View>
+
+          {userProfile.allergies && userProfile.allergies.length > 0 ? (
+            <View style={styles.allergyChipsRow}>
+              {userProfile.allergies.map((allergy, i) => (
+                <View
+                  key={`all-${i}`}
+                  style={[
+                    styles.planAllergyChip,
+                    isDarkMode && { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.4)' },
+                  ]}
+                >
+                  <Text style={[styles.planAllergyChipText, isDarkMode && { color: '#FCD34D' }]}>{allergy}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.noFilterText, { color: theme.textMuted }]}>Tüm gıda grupları güvenle dahil edilmiştir.</Text>
+          )}
+        </View>
+      </View>
+
+      {/* 7-Day Horizontal Day Picker with Real Calendar Dates */}
+      <View style={styles.dayPickerWrapper}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayPickerContent}>
+          {effectiveWeekPlan.map((day, idx) => {
+            const isSelected = selectedDayIndex === idx;
+            return (
+              <TouchableOpacity
+                key={day.dayId}
+                style={[
+                  styles.dayTab,
+                  { backgroundColor: theme.surface, borderColor: theme.border },
+                  isSelected && [styles.dayTabActive, { backgroundColor: theme.primary, borderColor: theme.primary }],
+                  day.isToday && !isSelected && { borderColor: theme.primary, borderWidth: 1.8 },
+                ]}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setSelectedDayIndex(idx);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.dayShortText, { color: theme.textMuted }, isSelected && styles.dayShortActive]}>
+                  {day.dayShort}
+                </Text>
+                <Text style={[styles.dayNumText, { color: theme.textPrimary }, isSelected && styles.dayNumActive]}>
+                  {day.dayOfMonth}
+                </Text>
+                {day.isToday ? (
+                  <View
+                    style={[
+                      styles.todayIndicatorPill,
+                      { backgroundColor: isSelected ? '#FFFFFF' : theme.primary },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.todayIndicatorText,
+                        { color: isSelected ? theme.primaryDark : '#FFFFFF' },
+                      ]}
+                    >
+                      Bugün
+                    </Text>
+                  </View>
+                ) : isSelected ? (
+                  <View style={styles.activeDayDot} />
+                ) : null}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* Day Summary Telemetry Card */}
+      <View style={[styles.telemetryCard, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}>
+        <View style={styles.telemetryRow}>
+          <View>
+            <Text style={[styles.telemetryDayTitle, { color: theme.textPrimary }]}>
+              {activeDay.dayName} ({activeDay.dayOfMonth} {activeDay.monthName}) Planı
+            </Text>
+            <Text style={[styles.telemetrySub, { color: theme.textMuted }]}>
+              Hedef: {userProfile.targetCalories} kcal • Plan: {totalPlannedCalories} kcal
+            </Text>
+          </View>
+          <View style={[styles.proteinBadge, { backgroundColor: isDarkMode ? 'rgba(59, 130, 246, 0.25)' : Colors.proteinLight }]}>
+            <Text style={[styles.proteinBadgeText, { color: theme.protein }]}>{totalPlannedProtein}g Protein</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* 4 Daily Meal Cards */}
+      {renderMealCard(activeDay.breakfast, 'breakfast', 'Kahvaltı', '🍳')}
+      {renderMealCard(activeDay.lunch, 'lunch', 'Öğle Yemeği', '☀️')}
+      {renderMealCard(activeDay.dinner, 'dinner', 'Akşam Yemeği', '🌙')}
+      {renderMealCard(activeDay.snack, 'snack', 'Ara Öğün', '🍎')}
+
+      {/* Footer Info */}
+      <View
+        style={[
+          styles.footerInfoBox,
+          isDarkMode
+            ? { backgroundColor: '#1E293B', borderColor: '#334155' }
+            : { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
+        ]}
+      >
+        <Text style={[styles.footerInfoText, isDarkMode && { color: '#93C5FD' }]}>
+          {'💡 Beğenmediğiniz bir öğünü "Alternatif Sun" butonuyla anında değiştirebilirsiniz. Tüm alternatifler kayıtlı alerjilerinize ve hedeflerinize %100 uygundur.'}
+        </Text>
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    padding: Spacing.lg,
+    paddingBottom: Spacing.xxxl * 1.5,
+  },
+  planHeaderCard: {
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    ...Shadows.card,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  aiBadge: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+  },
+  aiBadgeText: {
+    ...Typography.tiny,
+    fontWeight: '700',
+  },
+  goalPill: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+  },
+  goalPillText: {
+    ...Typography.tiny,
+    fontWeight: '600',
+  },
+  headerTitle: {
+    ...Typography.h2,
+    marginTop: Spacing.xs,
+  },
+  headerDesc: {
+    ...Typography.caption,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  filterBanner: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+  },
+  filterBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
+  },
+  filterBannerTitle: {
+    ...Typography.tiny,
+    fontWeight: '700',
+  },
+  safetyVerifiedBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  safetyVerifiedText: {
+    ...Typography.tiny,
+    fontSize: 10,
+    color: '#15803D',
+    fontWeight: '800',
+  },
+  allergyChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+    marginTop: 4,
+  },
+  planAllergyChip: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  planAllergyChipText: {
+    ...Typography.tiny,
+    fontSize: 10,
+    color: '#92400E',
+    fontWeight: '700',
+  },
+  noFilterText: {
+    ...Typography.tiny,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  dayPickerWrapper: {
+    marginBottom: Spacing.md,
+  },
+  dayPickerContent: {
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  dayTab: {
+    width: 54,
+    minHeight: 70,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    ...Shadows.card,
+  },
+  dayTabActive: {
+    transform: [{ scale: 1.05 }],
+  },
+  dayShortText: {
+    ...Typography.tiny,
+    fontWeight: '600',
+  },
+  dayShortActive: {
+    color: Colors.textInverse,
+  },
+  dayNumText: {
+    ...Typography.bodyBold,
+    fontSize: 16,
+    marginTop: 2,
+  },
+  dayNumActive: {
+    color: Colors.textInverse,
+    fontWeight: '800',
+  },
+  todayIndicatorPill: {
+    marginTop: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: BorderRadius.full,
+  },
+  todayIndicatorText: {
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  activeDayDot: {
+    width: 4,
+    height: 4,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.textInverse,
+    marginTop: 3,
+  },
+  telemetryCard: {
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+  },
+  telemetryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  telemetryDayTitle: {
+    ...Typography.bodyBold,
+  },
+  telemetrySub: {
+    ...Typography.tiny,
+    marginTop: 2,
+  },
+  proteinBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+  },
+  proteinBadgeText: {
+    ...Typography.captionBold,
+  },
+  mealCard: {
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    ...Shadows.card,
+  },
+  mealHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
+  },
+  mealTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flex: 1,
+  },
+  mealTypeIcon: {
+    fontSize: 22,
+  },
+  mealTypeLabel: {
+    ...Typography.tiny,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  mealTitle: {
+    ...Typography.bodyBold,
+  },
+  mealCaloriesBadge: {
+    ...Typography.captionBold,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+  },
+  mealDescription: {
+    ...Typography.caption,
+    marginTop: Spacing.xs,
+    lineHeight: 18,
+  },
+  macroPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
+    paddingTop: Spacing.xs,
+  },
+  macroPill: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.xs,
+  },
+  macroPillText: {
+    ...Typography.tiny,
+    fontWeight: '700',
+  },
+  recipeTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+    marginTop: Spacing.sm,
+  },
+  recipeTagBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  recipeTagText: {
+    ...Typography.tiny,
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    paddingTop: Spacing.sm,
+    borderTopWidth: 1,
+  },
+  swapButton: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  swapButtonText: {
+    ...Typography.captionBold,
+  },
+  logButton: {
+    flex: 1.2,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+  },
+  logButtonText: {
+    ...Typography.captionBold,
+    color: Colors.textInverse,
+  },
+  footerInfoBox: {
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginTop: Spacing.sm,
+  },
+  footerInfoText: {
+    ...Typography.caption,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  /* Allergen Alert & Security Badges */
+  allergenAlertCard: {
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  allergenAlertHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  allergenAlertIcon: {
+    fontSize: 16,
+    marginTop: 1,
+  },
+  allergenAlertTitle: {
+    ...Typography.captionBold,
+    fontSize: 12,
+  },
+  allergenAlertSub: {
+    ...Typography.tiny,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  allergenQuickSwapBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  allergenQuickSwapText: {
+    ...Typography.tiny,
+    color: Colors.textInverse,
+    fontWeight: '700',
+  },
+  allergenSafeBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  allergenSafeText: {
+    ...Typography.tiny,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+});
