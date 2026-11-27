@@ -1,8 +1,13 @@
 # 🧠 DietAI — Backend, Middleware & Local AI Orchestration Guide
 
-Welcome to the **DietAI Backend** directory (`/backend`). This README is the **single source of truth** for:
-1. **Frontend / Mobile (`@Bertan`)** — exact endpoints, JWT auth, onboarding profile sync, and chat/photo payloads.
-2. **AI & CV Service (`@Eren` / `@Ali`)** — the exact HTTP JSON contract the backend sends to the **local AI service** (`system_prompt`, `messages` history from MongoDB, `user_context` from PostgreSQL + Mobile) and the JSON response the backend expects back.
+Welcome to the **DietAI Backend** directory (`/backend`). This README is the **single technical source of truth** for the merged repository (`Mobile` + `Backend` + `Local AI Service`):
+1. **Frontend / Mobile (`@Bertan`)** — exact endpoints, JWT auth + refresh, onboarding profile sync, meal plan, and chat/photo payloads aligned with `mobile/src/services/api.ts`.
+2. **AI & CV Service (`@Eren`)** — exact HTTP JSON contracts (`GET /health`, `POST /api/v1/llm/chat`, `POST /api/v1/cv/detect`), how the backend builds `system_prompt` + `messages[]` from PostgreSQL + MongoDB + Mobile, and what `/ai-service` needs to implement next.
+
+### ✅ Current Integration Status (Latest Commits)
+* **Mobile (`/mobile`):** Merged into this branch (`frontend-and-mobile` up to `9325929`) — Bento Dashboard, 3-phase onboarding with dual BMR engine, hardware `expo-secure-store` JWT + auto-refresh, barcode scanner, recipe builder, allergen guardrails, and daily midnight rollover.
+* **Backend (`/backend`):** Complete & verified (`12/12` `pytest` tests passing) — Polyglot DB (PostgreSQL 16 + MongoDB 7.0 with in-memory dev fallback), JWT Auth, Onboarding Profile persistence, Clinical BMR/TDEE/Exchanges, Turkish accent-insensitive Guardrails, MongoDB Chat Memory (`last 10 turns`), Dynamic System Prompt Builder, Photo CV Proxy, and `RequestContextMiddleware`.
+* **AI Service (`/ai-service`):** Next to build — scaffold exists at `ai-service/server.py`; follow **Section 4** below to plug in the local LLM and food vision detector.
 
 ---
 
@@ -137,7 +142,13 @@ The backend communicates with the AI service over HTTP (`AI_SERVICE_URL=http://l
 
 > **Key Design Rule for AI Service:**
 > **You do NOT need to connect to PostgreSQL or MongoDB in `ai-service`!**
-> The backend already fetches the user's clinical profile from PostgreSQL, merges it with today's live macros from the Mobile App, loads the last 10 chat turns from MongoDB, and sends you a ready-to-use `system_prompt` and `messages` list. Your service only needs to feed `system_prompt` + `messages` into the local model (Ollama / vLLM / llama.cpp / HuggingFace / Gemini) and return the generated text.
+> The backend already fetches the user's clinical profile from PostgreSQL, merges it with today's live macros from the Mobile App, loads the last 10 chat turns from MongoDB, and sends you a ready-to-use `system_prompt` and `messages` list. Your service stays **100% stateless**: just run the local model (Ollama / vLLM / llama.cpp / HuggingFace / Vision model) and return JSON.
+
+### Quick Checklist for Updating `ai-service/server.py`
+1. **`GET /health`:** Keep returning HTTP `200` (`{"status": "ok", "service": "ai-service"}`). Backend checks this in `GET /api/v1/health` (`"ai_service_reachable": true`).
+2. **`POST /api/v1/llm/chat`:** Extend `ChatbotRequest` to accept `system_prompt: Optional[str]`, `messages: Optional[List[Dict[str, str]]]`, `options: Optional[Dict[str, Any]]`, and `safety: Optional[Dict[str, Any]]` (alongside existing `prompt` and `user_context`), then pass `[{"role": "system", "content": system_prompt}, *messages]` to the local LLM and return `{"text": ..., "model": ..., "safety_flag": false, "suggested_meal": null}`.
+3. **`POST /api/v1/cv/detect`:** Accept `image_base64` (already cleaned of any `data:image/...;base64,` prefix) and optional `meal_type` / `request_id`, run the food vision/portion model, and return `{"detected_items": [...]}`.
+4. **Timeout & Fallback:** Backend waits up to `AI_SERVICE_TIMEOUT_SECONDS=60` seconds (configurable in `backend/.env`) so CPU/local GPU inference won't time out prematurely. Set `AI_MOCK_FALLBACK=false` in `backend/.env` when testing real AI errors strictly (`HTTP 503` instead of offline fallback).
 
 ---
 
@@ -330,7 +341,24 @@ Every response includes `X-Request-ID` and `X-Process-Time-Ms` headers.
 
 ---
 
-## 🧪 6. Running Backend & Tests Locally
+## ⚙️ 6. Key Environment Variables (`backend/.env`)
+
+Copy `backend/.env.example` to `backend/.env` for local overrides:
+
+| Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | `postgresql://postgres:postgrespassword@localhost:5432/diet_ai_db` | PostgreSQL connection string (`users`, `user_profiles`, `meal_logs`). |
+| `MONGODB_URL` / `MONGODB_DB_NAME` | `mongodb://localhost:27017` / `diet_ai_nosql` | MongoDB connection for `chat_logs` (auto-falls back to in-memory if unreachable). |
+| `CHAT_HISTORY_LIMIT` | `10` | Number of previous chat turns loaded from MongoDB and sent to the AI service. |
+| `AI_SERVICE_URL` | `http://localhost:8001` | Base URL of `/ai-service` (`http://ai-service:8001` inside Docker). |
+| `AI_SERVICE_TIMEOUT_SECONDS` | `60` | HTTP timeout for local LLM / CV inference. |
+| `AI_MOCK_FALLBACK` | `true` | `true`: return offline demo reply/detection when AI service is down; `false`: return `HTTP 503`. |
+| `AI_TEMPERATURE` / `AI_MAX_TOKENS` | `0.4` / `512` | Default generation options forwarded to `POST /api/v1/llm/chat`. |
+| `SECRET_KEY` | dev default | Signing key for JWT access (`60m`) and refresh (`30d`) tokens. |
+
+---
+
+## 🧪 7. Running Backend, Tests & End-to-End Verification Locally
 
 ```bash
 cd backend
@@ -339,6 +367,8 @@ cd backend
 python -m venv .venv
 # Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
+# macOS / Linux:
+# source .venv/bin/activate
 pip install -r requirements.txt
 
 # 2. Run the full automated test suite (12 tests: clinical math + auth + onboarding + chat memory + AI contracts)
@@ -347,6 +377,18 @@ python -m pytest -v
 # 3. Start the FastAPI server (works even if Docker/Mongo/AI-service are off!)
 uvicorn app.main:app --reload --port 8000
 
-# 4. Open Interactive Swagger UI Docs
+# 4. Verify live health & AI Service connectivity
+# Open http://localhost:8000/api/v1/health
+# Expect: "chat_store": "mongodb" (with Docker) and "ai_service_reachable": true (when ai-service :8001 is up)
+
+# 5. Open Interactive Swagger UI Docs
 # http://localhost:8000/api/v1/docs
 ```
+
+### Connecting Mobile App to Your Local Backend
+In `mobile/.env`:
+```env
+EXPO_PUBLIC_API_BASE_URL=http://<YOUR_LOCAL_LAN_IP>:8000/api/v1
+EXPO_PUBLIC_USE_MOCK_DATA=false
+```
+Then run `npx expo start` inside `/mobile`.
